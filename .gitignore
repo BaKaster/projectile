@@ -1,0 +1,13 @@
+description.txt
+/Данные для стажёров/
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp*/
+*.egg-info/
+.coverage
+htmlcov/
+storage/
+postgres_data/

@@ -1,0 +1,81 @@
+<mxfile host="app.diagrams.net" modified="2026-08-17T00:00:00.000Z" agent="Codex" version="24.7.17" type="device" compressed="false">
+  <diagram id="project-estimation-architecture" name="Целевая архитектура">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="&lt;b&gt;Система генерации предварительной оценки проекта&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;fontFamily=Arial;fontSize=22;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="800" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user" value="Пользователь" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fontFamily=Arial;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="760" y="80" width="50" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="frontend" value="&lt;b&gt;Web-интерфейс&lt;/b&gt;&lt;br&gt;Загрузка • вопросы • корректировки • скачивание" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;strokeWidth=2;fontFamily=Arial;fontSize=13;align=center;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="570" y="180" width="430" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="backend" value="&lt;b&gt;Backend&lt;/b&gt;" style="swimlane;html=1;rounded=1;startSize=34;fillColor=#f8fafc;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="550" y="300" width="470" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="&lt;b&gt;API проектов и документов&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;strokeWidth=2;fontFamily=Arial;fontSize=13;" vertex="1" parent="backend">
+          <mxGeometry x="115" y="60" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="orchestrator" value="&lt;b&gt;Оркестратор обработки&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;strokeWidth=2;fontFamily=Arial;fontSize=13;" vertex="1" parent="backend">
+          <mxGeometry x="115" y="145" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="extractor" value="&lt;b&gt;Извлечение текста и таблиц&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;strokeWidth=2;fontFamily=Arial;fontSize=13;" vertex="1" parent="backend">
+          <mxGeometry x="115" y="230" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="analysis" value="&lt;b&gt;LLM-анализ&lt;/b&gt;&lt;br&gt;содержимое и тип проекта" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde68a;strokeColor=#ca8a04;strokeWidth=2;fontFamily=Arial;fontSize=13;" vertex="1" parent="backend">
+          <mxGeometry x="115" y="315" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="estimator" value="&lt;b&gt;Генератор оценки&lt;/b&gt;&lt;br&gt;по справочным правилам" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;strokeWidth=2;fontFamily=Arial;fontSize=13;" vertex="1" parent="backend">
+          <mxGeometry x="115" y="405" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="validator" value="&lt;b&gt;Pydantic-валидация&lt;/b&gt;&lt;br&gt;структура • коды • ограничения" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=2;fontFamily=Arial;fontSize=13;" vertex="1" parent="backend">
+          <mxGeometry x="115" y="495" width="240" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="exporter" value="&lt;b&gt;Excel-экспортёр&lt;/b&gt;&lt;br&gt;openpyxl" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;strokeWidth=2;fontFamily=Arial;fontSize=13;" vertex="1" parent="backend">
+          <mxGeometry x="115" y="585" width="240" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="storage" value="&lt;b&gt;Файловое / объектное хранилище&lt;/b&gt;&lt;hr&gt;исходные документы&lt;br&gt;шаблоны Excel&lt;br&gt;готовые .xlsx" style="shape=folder;tabWidth=70;tabHeight=20;tabPosition=left;html=1;whiteSpace=wrap;fillColor=#fce7f3;strokeColor=#db2777;strokeWidth=2;fontFamily=Arial;fontSize=13;align=center;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="90" y="410" width="300" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="llm" value="&lt;b&gt;LLM API&lt;/b&gt;&lt;hr&gt;анализ документов&lt;br&gt;структурированный JSON" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#fde68a;strokeColor=#ca8a04;strokeWidth=2;fontFamily=Arial;fontSize=13;align=center;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="130" y="640" width="230" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="db" value="&lt;b&gt;PostgreSQL&lt;/b&gt;&lt;hr&gt;проекты и документы&lt;br&gt;извлечённый текст&lt;br&gt;запуски и версии&lt;br&gt;типы, этапы, работы&lt;br&gt;роли и нормативные часы" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=2;fontFamily=Arial;fontSize=13;align=center;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="500" width="300" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="excel" value="&lt;b&gt;Итоговый Excel (.xlsx)&lt;/b&gt;&lt;br&gt;этапы • работы • роли • часы • допущения" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#e0f2fe;strokeColor=#0284c7;strokeWidth=2;fontFamily=Arial;fontSize=13;align=center;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="600" y="1080" width="370" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-user-front" value="загрузить или уточнить" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="user" target="frontend"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-front-api" value="HTTPS — multipart + JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="frontend" target="api"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-api-orch" value="запуск / статус" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="backend" source="api" target="orchestrator"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-orch-ext" value="обработать документы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="backend" source="orchestrator" target="extractor"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-ext-analysis" value="нормализованный текст" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="backend" source="extractor" target="analysis"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-analysis-est" value="факты, тип, вопросы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="backend" source="analysis" target="estimator"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-est-val" value="JSON-кандидат" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="backend" source="estimator" target="validator"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-val-export" value="валидная модель" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="backend" source="validator" target="exporter"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-export-excel" value="версионированный результат" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="exporter" target="excel"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-api-storage" value="документы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="api" target="storage"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-export-storage" value="шаблон / готовый файл" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="exporter" target="storage"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-analysis-llm" value="анализ" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="analysis" target="llm"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-est-llm" value="JSON по схеме" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="estimator" target="llm"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-api-db" value="проект, ID и связи" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="api" target="db"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-ext-db" value="извлечённое содержимое" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="extractor" target="db"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-est-db" value="правила и нормативы" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="estimator" target="db"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-val-db" value="версия оценки" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#475569;strokeWidth=2;fontFamily=Arial;fontSize=12;" edge="1" parent="1" source="validator" target="db"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="note" value="&lt;b&gt;Инварианты&lt;/b&gt;&lt;br&gt;• LLM не является источником нормативов.&lt;br&gt;• LLM не выбирает координаты Excel.&lt;br&gt;• Excel строится из валидной версии оценки." style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=#fff7ed;strokeColor=#ea580c;fontFamily=Arial;fontSize=12;align=left;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="800" width="360" height="140" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
