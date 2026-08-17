@@ -9,7 +9,9 @@ description = "FastAPI backend for project document ingestion and estimation"
 requires-python = ">=3.12"
 dependencies = [
   "asyncpg>=0.29,<1",
+  "charset-normalizer>=3.4,<4",
   "fastapi>=0.115,<1",
+  "openai>=1.66,<3",
   "pydantic-settings>=2.6,<3",
   "python-multipart>=0.0.12,<1",
   "sqlalchemy[asyncio]>=2.0,<2.2",
@@ -17,6 +19,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+recognition = [
+  "docling>=2.48,<3",
+  "faster-whisper>=1.1,<2",
+  "jpype1>=1.5,<2",
+  "libarchive-c>=5.2,<6",
+  "mpxj>=14,<16",
+  "openpyxl>=3.1,<4",
+  "pymupdf>=1.26,<2",
+  "python-docx>=1.2,<2",
+  "python-pptx>=1.0,<2",
+  "xlrd>=2.0,<3"
+]
 dev = [
   "httpx>=0.27,<1",
   "pytest>=8,<9"

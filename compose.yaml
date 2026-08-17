@@ -1,10 +1,12 @@
 services:
   db:
     image: postgres:17-alpine
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-projectile}
-      POSTGRES_USER: ${POSTGRES_USER:-projectile}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-projectile}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     ports:
       - "${POSTGRES_PORT:-55432}:5432"
     volumes:
@@ -18,18 +20,27 @@ services:
 
   api:
     build: .
+    env_file:
+      - .env
     environment:
-      PROJECTILE_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-projectile}:${POSTGRES_PASSWORD:-projectile}@db:5432/${POSTGRES_DB:-projectile}
+      PROJECTILE_DATABASE_URL: ${PROJECTILE_DATABASE_URL:?PROJECTILE_DATABASE_URL must be set in .env}
       PROJECTILE_STORAGE_ROOT: /app/storage
       PROJECTILE_PROJECT_TYPES_PATH: /app/data/project-types.json
       PROJECTILE_AUTO_CREATE_SCHEMA: "true"
       PROJECTILE_MAX_UPLOAD_SIZE_BYTES: ${PROJECTILE_MAX_UPLOAD_SIZE_BYTES:-536870912}
-      PROJECTILE_MAX_FILES_PER_REQUEST: ${PROJECTILE_MAX_FILES_PER_REQUEST:-100}
+      PROJECTILE_MAX_FILES_PER_REQUEST: ${PROJECTILE_MAX_FILES_PER_REQUEST:-1000}
       PROJECTILE_CORS_ORIGINS: ${PROJECTILE_CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      KEY_OPENAI: ${KEY_OPENAI:-}
+      PROJECTILE_ANALYSIS_MODEL: ${PROJECTILE_ANALYSIS_MODEL:-gpt-5.4-mini}
+      PROJECTILE_ANALYSIS_DIGEST_CONCURRENCY: ${PROJECTILE_ANALYSIS_DIGEST_CONCURRENCY:-2}
+      PROJECTILE_RECOGNITION_MODEL: ${PROJECTILE_RECOGNITION_MODEL:-small}
+      PROJECTILE_RECOGNITION_DEVICE: ${PROJECTILE_RECOGNITION_DEVICE:-cpu}
+      PROJECTILE_RECOGNITION_COMPUTE_TYPE: ${PROJECTILE_RECOGNITION_COMPUTE_TYPE:-int8}
     ports:
       - "8000:8000"
     volumes:
       - ./storage:/app/storage
+      - model_cache:/home/appuser/.cache
     depends_on:
       db:
         condition: service_healthy
@@ -37,3 +48,4 @@ services:
 
 volumes:
   postgres_data:
+  model_cache:

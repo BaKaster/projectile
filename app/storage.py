@@ -23,6 +23,7 @@ class FileTooLargeError(ValueError):
 class StagedUpload:
     temp_path: Path
     original_filename: str
+    source_path: str
     stored_filename: str
     media_type: str
     size_bytes: int
@@ -50,6 +51,18 @@ def safe_filename(filename: str | None) -> str:
     return f"{stem[:max_stem_length]}{suffix}"
 
 
+def safe_relative_path(path: str | None) -> str:
+    raw = unicodedata.normalize("NFKC", path or "upload.bin").replace("\\", "/")
+    parts = [
+        safe_filename(part)
+        for part in raw.split("/")
+        if part not in {"", ".", ".."}
+    ]
+    if not parts:
+        parts = ["upload.bin"]
+    return "/".join(parts)[-1024:]
+
+
 class LocalFileStorage:
     def __init__(self, root: Path, max_bytes: int, chunk_size: int) -> None:
         self.root = root.resolve()
@@ -58,7 +71,9 @@ class LocalFileStorage:
         self.staging_root = self.root / ".staging"
         self.staging_root.mkdir(parents=True, exist_ok=True)
 
-    async def stage(self, upload: UploadFile) -> StagedUpload:
+    async def stage(
+        self, upload: UploadFile, source_path: str | None = None
+    ) -> StagedUpload:
         stored_name = safe_filename(upload.filename)
         original_name = safe_filename(upload.filename)
         temp_path = self.staging_root / f"{uuid.uuid4()}.part"
@@ -82,6 +97,7 @@ class LocalFileStorage:
         return StagedUpload(
             temp_path=temp_path,
             original_filename=original_name,
+            source_path=safe_relative_path(source_path or upload.filename),
             stored_filename=stored_name,
             media_type=upload.content_type or "application/octet-stream",
             size_bytes=size,
@@ -114,3 +130,10 @@ class LocalFileStorage:
     @staticmethod
     def remove_persisted(persisted: PersistedFile) -> None:
         persisted.absolute_path.unlink(missing_ok=True)
+
+    def resolve_uri(self, storage_uri: str) -> Path:
+        """Resolve a database URI without allowing it to escape the storage root."""
+        candidate = self.root.joinpath(*PurePosixPath(storage_uri).parts).resolve()
+        if candidate != self.root and self.root not in candidate.parents:
+            raise ValueError("Storage URI points outside the storage root")
+        return candidate

@@ -1,5 +1,7 @@
 # Projectile
 
+Инструкция и готовый промпт для передачи frontend-разработчику: [docs/frontend-handoff.md](docs/frontend-handoff.md).
+
 Backend для загрузки проектных документов, их последующего анализа и формирования предварительной оценки проекта.
 
 ## Что реализовано
@@ -28,7 +30,7 @@ docker compose up -d --build
 - Swagger UI: `http://localhost:8000/docs`;
 - health check: `http://localhost:8000/health`;
 - PostgreSQL с хоста: `localhost:55432`;
-- база, пользователь и пароль по умолчанию: `projectile`.
+- имя базы, пользователь и пароль берутся из `.env`; пароль по умолчанию отсутствует.
 
 Порт `55432` выбран для PostgreSQL, чтобы не конфликтовать с локальным PostgreSQL на стандартном порту `5432`. Его можно изменить через `POSTGRES_PORT`.
 
@@ -70,6 +72,7 @@ const body = new FormData();
 
 for (const file of files) {
   body.append("files", file);
+  body.append("relative_paths", file.webkitRelativePath || file.name);
 }
 
 const response = await fetch(
@@ -83,18 +86,21 @@ const response = await fetch(
 ```
 
 Не нужно устанавливать `Content-Type` вручную: браузер сам добавит корректную multipart boundary.
+Поле `relative_paths` необязательно, но его следует передавать при загрузке папки: оно
+сохраняет структуру проекта и различает одноимённые файлы из разных подпапок.
 
 Успешный ответ имеет статус `202 Accepted`:
 
 ```json
 {
   "project_id": "c9c8908d-e995-4676-8ca7-9c53cd9fc457",
-  "run_id": "fb087390-f84e-42bc-ab48-48704a3b543d",
+  "upload_run_id": "fb087390-f84e-42bc-ab48-48704a3b543d",
   "status": "uploaded",
   "documents": [
     {
       "id": "ea513dfd-cb92-46a5-b308-a247897aa50d",
       "original_filename": "ТЗ.pdf",
+      "source_path": "requirements/ТЗ.pdf",
       "media_type": "application/pdf",
       "size_bytes": 123456,
       "sha256": "...",
@@ -112,7 +118,7 @@ const response = await fetch(
 Скопируйте `.env.example` в `.env` и измените нужные параметры. Основные ограничения:
 
 - `PROJECTILE_MAX_UPLOAD_SIZE_BYTES` — максимальный размер одного файла, по умолчанию 512 МиБ;
-- `PROJECTILE_MAX_FILES_PER_REQUEST` — максимальное количество файлов, по умолчанию 100;
+- `PROJECTILE_MAX_FILES_PER_REQUEST` — максимальное количество файлов, по умолчанию 1000;
 - `PROJECTILE_CORS_ORIGINS` — разрешённые frontend origins;
 - `PROJECTILE_STORAGE_ROOT` — каталог бинарных файлов;
 - `PROJECTILE_DATABASE_URL` — строка подключения SQLAlchemy/asyncpg.
@@ -124,6 +130,8 @@ const response = await fetch(
 - `project_documents`;
 - `document_extractions`;
 - `processing_runs`;
+- `analysis_runs`;
+- `project_analyses`;
 - `project_types`.
 
 Для MVP схема создаётся при старте приложения, а справочник `data/project-types.json` синхронизируется с таблицей `project_types`.
@@ -132,7 +140,7 @@ const response = await fetch(
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,recognition]"
 .\.venv\Scripts\python.exe -m pytest
 ```
 
@@ -141,5 +149,64 @@ python -m venv .venv
 ```powershell
 docker compose up -d db
 $env:RUN_INTEGRATION_TESTS = "1"
+$env:TEST_DATABASE_URL = "postgresql+asyncpg://<user>:<password>@localhost:55432/<database>"
 .\.venv\Scripts\python.exe -m pytest --basetemp=.pytest-tmp
 ```
+
+## Распознавание и анализ проекта
+
+Загрузка и анализ разделены. После загрузки frontend передаёт только `projectId`:
+
+```http
+POST /api/v1/projects/{projectId}/analysis-runs
+Content-Type: application/json
+
+{}
+```
+
+API фиксирует актуальные версии документов проекта и немедленно возвращает `202`:
+
+```json
+{
+  "run_id": "d55ba5e4-d516-4918-b53f-346f2970cc2c",
+  "project_id": "c9c8908d-e995-4676-8ca7-9c53cd9fc457",
+  "status": "queued",
+  "document_ids": ["ea513dfd-cb92-46a5-b308-a247897aa50d"]
+}
+```
+
+Frontend опрашивает состояние отдельным запросом:
+
+```http
+GET /api/v1/projects/{projectId}/analysis-runs/{runId}
+```
+
+Возможные состояния: `queued`, `extracting`, `analyzing`, `requires_input`, `ready`,
+`failed`. Последний запуск также доступен через
+`GET /api/v1/projects/{projectId}/analyses/latest`.
+
+Конвейер сначала использует быстрый текстовый слой PyMuPDF для цифровых PDF и нативные
+парсеры для DOCX/PPTX. Docling и Tesseract `rus+eng` запускаются только как fallback для
+сканов, изображений и документов без достаточного текста. Для русской речи используется
+faster-whisper с VAD; CPU-модель по умолчанию — `small`, а `large-v3` можно включить через
+`PROJECTILE_RECOGNITION_MODEL`, если точность важнее скорости. ZIP-архивы раскрываются
+с ограничениями, обычные текстовые форматы читаются без тяжёлого распознавателя.
+Дополнительно поддерживаются RAR/7z,
+Excel с сохранением формул, MPP-расписания, VSDX-схемы и аудиодорожки из видео.
+Результаты OCR/ASR кэшируются в
+`document_extractions`. Итоговая типизация, факты, допущения, пробелы и только существенно
+влияющие на оценку вопросы сохраняются в `project_analyses`; состояние задачи — в
+`analysis_runs`.
+
+Если суммарный текст пачки не помещается в один запрос модели, worker сначала строит
+структурированные конспекты отдельных документов небольшими пакетами, обрабатывает до
+`PROJECTILE_ANALYSIS_DIGEST_CONCURRENCY` пакетов параллельно, сохраняет их в
+`document_digests`, а затем выполняет общий анализ проекта. Исходные требования имеют
+приоритет над КП и внутренними расчётами, но противоречия между ними остаются в `issues`.
+
+Для принудительного повторного OCR/ASR передайте `{"force_reextract": true}`. По умолчанию
+используется сохранённый текст. Для смыслового анализа задайте `KEY_OPENAI` или
+`OPENAI_API_KEY`; название модели настраивается через `PROJECTILE_ANALYSIS_MODEL`.
+
+Результаты замеров и оставшиеся ограничения описаны в
+[docs/performance-review.md](docs/performance-review.md).

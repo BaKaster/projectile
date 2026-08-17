@@ -48,6 +48,7 @@ class Document(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     media_type: Mapped[str] = mapped_column(
         String(255), nullable=False, default="application/octet-stream"
@@ -105,6 +106,82 @@ class DocumentExtraction(TimestampMixin, Base):
             "status IN ('pending', 'extracting', 'ready', 'unsupported', 'failed')",
             name="ck_document_extractions_status",
         ),
+    )
+
+
+class AnalysisRun(TimestampMixin, Base):
+    __tablename__ = "analysis_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    current_step: Mapped[str] = mapped_column(String(64), nullable=False, default="queued")
+    input_document_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    force_reextract: Mapped[bool] = mapped_column(nullable=False, default=False)
+    question_policy: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="material_only"
+    )
+    model_name: Mapped[str | None] = mapped_column(String(100))
+    errors: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'extracting', 'analyzing', 'requires_input', "
+            "'ready', 'failed')",
+            name="ck_analysis_runs_status",
+        ),
+        Index("ix_analysis_runs_status_created", "status", "created_at"),
+        Index("ix_analysis_runs_project_created", "project_id", "created_at"),
+    )
+
+
+class ProjectAnalysis(Base):
+    __tablename__ = "project_analyses"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("analysis_runs.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    project_type_code: Mapped[str | None] = mapped_column(
+        ForeignKey("project_types.code", ondelete="SET NULL")
+    )
+    confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    facts: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    assumptions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    issues: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    gaps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    questions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    document_digests: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    source_document_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    raw_result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "confidence IN ('low', 'medium', 'high')",
+            name="ck_project_analyses_confidence",
+        ),
+        Index("ix_project_analyses_project_created", "project_id", "created_at"),
     )
 
 
