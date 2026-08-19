@@ -20,11 +20,52 @@ const elements = {
   sidebar: $("#sidebar"), overlay: $("#sidebar-overlay"), history: $("#chat-history"),
   newChat: $("#new-chat"), openSidebar: $("#open-sidebar"), closeSidebar: $("#close-sidebar"),
   title: $("#chat-title"), subtitle: $("#chat-subtitle"), statusDot: $("#status-dot"), apiLabel: $("#api-label"),
-  conversation: $("#conversation"), empty: $("#empty-state"), download: $("#download-pdf"),
+  conversation: $("#conversation"), empty: $("#empty-state"),
   composer: $("#composer"), input: $("#message-input"), send: $("#send-button"),
   attach: $("#attach-button"), fileInput: $("#file-input"), pendingFiles: $("#pending-files"),
   questionActions: $("#question-actions"), skip: $("#skip-questions"), toast: $("#toast"),
+  themeToggle: $("#theme-toggle"), themeLabel: $("#theme-label"), dropOverlay: $("#drop-overlay"),
 };
+
+let dragDepth = 0;
+
+function setTheme(theme) {
+  const dark = theme === "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  elements.themeToggle.setAttribute("aria-pressed", String(dark));
+  elements.themeToggle.setAttribute("aria-label", dark ? "Включить светлую тему" : "Включить тёмную тему");
+  elements.themeLabel.textContent = dark ? "Светлая тема" : "Тёмная тема";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#111111" : "#ffffff");
+  syncReportLinks();
+}
+
+function syncReportLinks() {
+  const theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  for (const link of document.querySelectorAll("[data-report-project][data-report-run]")) {
+    link.href = analysisReportUrl(apiBase, link.dataset.reportProject, link.dataset.reportRun, theme);
+    link.download = `projectile-analysis-${link.dataset.reportRun}-${theme}.pdf`;
+  }
+}
+
+function initialTheme() {
+  const saved = localStorage.getItem("projectile-theme");
+  return saved === "dark" || saved === "light"
+    ? saved
+    : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function hasFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes("Files");
+}
+
+function addFiles(files) {
+  const existing = new Set(state.files.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+  for (const file of files) {
+    const key = `${file.name}:${file.size}:${file.lastModified}`;
+    if (!existing.has(key)) { state.files.push(file); existing.add(key); }
+  }
+  renderPendingFiles();
+}
 
 function showToast(message) {
   elements.toast.textContent = message;
@@ -99,7 +140,6 @@ function newChat() {
   elements.subtitle.textContent = "AI-анализ проектной документации";
   elements.conversation.replaceChildren(elements.empty);
   elements.empty.classList.remove("hidden");
-  elements.download.classList.add("hidden");
   elements.questionActions.classList.add("hidden");
   elements.input.placeholder = "Опишите проект или задайте вопрос…";
   renderPendingFiles(); refreshHistory(); closeSidebar(); elements.input.focus();
@@ -199,9 +239,14 @@ function renderAnalysis(run) {
   root.append(analysisSection("Проблемы и риски", gridBlock(result.issues, (issue) => card(issue.description, issue.impact_on_estimate))));
   root.append(analysisSection("Вопросы", gridBlock(result.questions, (question) => card(question.question, question.reason, "question"))));
   root.append(analysisSection("Предупреждения", listBlock(result.warnings)));
+  const footer = document.createElement("div"); footer.className = "analysis-footer";
+  const identity = document.createElement("span"); identity.className = "analysis-id"; identity.textContent = `Анализ ${run.run_id.slice(0, 8)}`;
+  const download = document.createElement("a"); download.className = "download-button";
+  download.dataset.reportProject = state.chat.id;
+  download.dataset.reportRun = run.run_id;
+  download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14"/></svg><span>Скачать этот анализ в PDF</span>';
+  footer.append(identity, download); root.append(footer); syncReportLinks();
   body.append(root);
-  elements.download.href = analysisReportUrl(apiBase, state.chat.id, run.run_id);
-  elements.download.classList.remove("hidden");
   updateQuestionMode(); scrollToBottom(); refreshHistory();
 }
 
@@ -282,11 +327,30 @@ elements.composer.addEventListener("submit", submitMessage);
 elements.input.addEventListener("input", resizeInput);
 elements.input.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); elements.composer.requestSubmit(); } });
 elements.attach.addEventListener("click", () => elements.fileInput.click());
-elements.fileInput.addEventListener("change", () => { state.files.push(...elements.fileInput.files); elements.fileInput.value = ""; renderPendingFiles(); });
+elements.fileInput.addEventListener("change", () => { addFiles(elements.fileInput.files); elements.fileInput.value = ""; });
+document.addEventListener("dragenter", (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault(); dragDepth += 1; elements.dropOverlay.classList.remove("hidden");
+});
+document.addEventListener("dragover", (event) => { if (hasFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
+document.addEventListener("dragleave", (event) => {
+  if (!hasFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) elements.dropOverlay.classList.add("hidden");
+});
+document.addEventListener("drop", (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault(); dragDepth = 0; elements.dropOverlay.classList.add("hidden");
+  addFiles(event.dataTransfer.files); elements.input.focus();
+});
+elements.themeToggle.addEventListener("click", () => {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("projectile-theme", theme); setTheme(theme);
+});
 elements.newChat.addEventListener("click", newChat); elements.skip.addEventListener("click", skipQuestions);
 elements.openSidebar.addEventListener("click", () => { elements.sidebar.classList.add("open"); elements.overlay.classList.add("open"); });
 elements.closeSidebar.addEventListener("click", closeSidebar); elements.overlay.addEventListener("click", closeSidebar);
 for (const suggestion of document.querySelectorAll("[data-prompt]")) suggestion.addEventListener("click", () => { elements.input.value = suggestion.dataset.prompt; resizeInput(); elements.input.focus(); });
 window.addEventListener("beforeunload", () => state.pollController?.abort());
 
-newChat(); checkHealth();
+setTheme(initialTheme()); newChat(); checkHealth();

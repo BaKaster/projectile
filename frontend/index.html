@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f7f7f4" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Projectile — AI-анализ проектов</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,8 +24,15 @@
         <div class="history-label">История</div>
         <nav class="chat-history" id="chat-history" aria-label="История чатов"></nav>
         <div class="sidebar-footer">
-          <span class="status-dot" id="status-dot"></span>
-          <span id="api-label">Подключение к API…</span>
+          <div class="api-status">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="api-label">Подключение к API…</span>
+          </div>
+          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Включить тёмную тему" aria-pressed="false">
+            <svg class="theme-icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2.2M12 19.8V22M4.9 4.9l1.6 1.6m11 11 1.6 1.6M2 12h2.2M19.8 12H22M4.9 19.1l1.6-1.6m11-11 1.6-1.6"/></svg>
+            <svg class="theme-icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg>
+            <span id="theme-label">Тёмная тема</span>
+          </button>
         </div>
       </aside>
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
@@ -37,10 +44,6 @@
             <span id="chat-title">Новый чат</span>
             <small id="chat-subtitle">AI-анализ проектной документации</small>
           </div>
-          <a class="download-button hidden" id="download-pdf" href="#" download>
-            <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14"/></svg>
-            Скачать PDF
-          </a>
         </header>
 
         <section class="conversation" id="conversation" aria-live="polite">
@@ -76,6 +79,13 @@
           <p class="disclaimer">Projectile может ошибаться. Проверяйте существенные выводы перед оценкой.</p>
         </div>
       </main>
+    </div>
+    <div class="drop-overlay hidden" id="drop-overlay" aria-hidden="true">
+      <div class="drop-card">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5"/></svg>
+        <strong>Перетащите документы сюда</strong>
+        <span>Отпустите, чтобы добавить их к сообщению</span>
+      </div>
     </div>
     <div class="toast hidden" id="toast" role="status"></div>
     <script src="./config.js"></script>

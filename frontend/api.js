@@ -96,8 +96,9 @@ export function skipAnalysisQuestions(apiBase, projectId, runId) {
   });
 }
 
-export function analysisReportUrl(apiBase, projectId, runId) {
-  return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.pdf`;
+export function analysisReportUrl(apiBase, projectId, runId, theme = "light") {
+  const reportTheme = theme === "dark" ? "dark" : "light";
+  return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.pdf?theme=${reportTheme}`;
 }
 
 export function buildUploadFormData(files) {
