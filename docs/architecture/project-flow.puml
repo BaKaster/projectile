@@ -1,0 +1,71 @@
+@startuml
+!theme plain
+
+title Основной сценарий обработки документов и генерации Excel
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ArrowColor #475569
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+actor "Пользователь" as user
+participant "Web-интерфейс" as ui #DBEAFE
+participant "Backend API /\nоркестратор" as api #DCFCE7
+database "PostgreSQL" as db #EDE9FE
+collections "Файловое\nхранилище" as files #FCE7F3
+participant "Обработчик\nдокументов" as docs #FEF3C7
+participant "LLM" as llm #FDE68A
+database "Справочник\nтипов и нормативов" as catalog #EDE9FE
+participant "Pydantic +\nExcel-экспортёр" as export #E0F2FE
+
+user -> ui : загрузить документы
+ui -> api : POST documents (multipart)
+api -> files : сохранить бинарные файлы
+api -> db : создать проект, документы и run
+api --> ui : 202 Accepted + projectId + runId
+
+api -> docs : извлечь текст и таблицы
+docs -> files : прочитать версии документов
+files --> docs : содержимое
+docs --> api : нормализованный текст / ошибки
+api -> db : сохранить extraction и статус
+
+api -> llm : проанализировать содержимое
+llm --> api : факты, тип проекта, вопросы, confidence
+
+alt данных недостаточно или есть противоречия
+  api -> db : run = requires_input
+  api --> ui : вопросы и предупреждения
+  ui --> user : запросить уточнение
+  user -> ui : исправить данные / добавить файлы
+  ui -> api : POST documents или POST run
+else данных достаточно
+  api -> catalog : получить правила выбранного типа
+  catalog --> api : этапы, работы, роли, нормативы
+  api -> llm : сформировать оценку по правилам
+  llm --> api : JSON-кандидат ProjectEstimate
+
+  loop не более заданного числа попыток
+    api -> export : валидировать Pydantic-модель и коды
+    alt модель невалидна
+      export --> api : структурированные ошибки
+      api -> llm : исправить только ошибки контракта
+      llm --> api : новый JSON-кандидат
+    else модель валидна
+      export --> api : валидная доменная модель
+    end
+  end
+
+  api -> db : сохранить estimate_version
+  api -> export : построить Excel из версии и шаблона
+  export -> files : сохранить .xlsx
+  files --> export : URI + checksum
+  export -> db : сохранить метаданные экспорта
+  api --> ui : run = ready + download URL
+  ui --> user : итоговый Excel
+end
+
+@enduml

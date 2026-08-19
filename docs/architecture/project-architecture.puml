@@ -1,0 +1,62 @@
+@startuml
+!theme plain
+
+top to bottom direction
+title Система генерации предварительной оценки проекта
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 12
+skinparam ArrowColor #475569
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+
+actor "Пользователь" as user
+rectangle "Web-интерфейс\nЗагрузка • вопросы • корректировки • скачивание" as frontend #DBEAFE
+
+package "Backend" #F8FAFC {
+  component "API проектов\nи документов" as api #DCFCE7
+  component "Оркестратор\nобработки" as orchestrator #DCFCE7
+  component "Извлечение текста\nи таблиц" as extractor #FEF3C7
+  component "LLM-анализ\nсодержимого и типа проекта" as analysis #FDE68A
+  component "Генератор оценки\nпо справочным правилам" as estimator #FEF3C7
+  component "Pydantic-валидация\nструктуры, кодов и ограничений" as validator #EDE9FE
+  component "Excel-экспортёр\nopenpyxl" as exporter #E0F2FE
+
+  api -down-> orchestrator : запустить / получить статус
+  orchestrator -down-> extractor : обработать версии документов
+  extractor -down-> analysis : нормализованный текст
+  analysis -down-> estimator : факты, тип, вопросы
+  estimator -down-> validator : JSON-кандидат
+  validator -down-> exporter : валидная модель
+}
+
+database "PostgreSQL\n\nпроекты и документы\nизвлечённый текст\nзапуски и версии\nтипы, этапы, работы\nроли и нормативные часы" as db #EDE9FE
+
+folder "Файловое / объектное хранилище\n\nисходные документы • шаблоны • готовые .xlsx" as storage #FCE7F3
+cloud "LLM API" as llm #FDE68A
+artifact "Итоговый Excel (.xlsx)" as excel #E0F2FE
+
+user -down-> frontend : загрузить или уточнить
+frontend -down-> api : HTTPS — multipart + JSON
+
+api -left-> storage : документы
+api -right-> db : проект, ID, связи и запуск
+extractor -right-> db : извлечённое содержимое
+analysis -left-> llm : факты и тип проекта
+estimator -right-> db : правила и нормативы
+estimator -left-> llm : JSON по заданной схеме
+validator -right-> db : версия оценки
+exporter -left-> storage : шаблон и готовый файл
+exporter -down-> excel : версионированный результат
+
+legend bottom
+  |= Инвариант |
+  | LLM не является источником нормативов. |
+  | LLM не выбирает листы, строки или ячейки Excel. |
+  | Excel строится детерминированно из валидной версии оценки. |
+endlegend
+
+@enduml

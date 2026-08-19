@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+  <head><meta charset="UTF-8"><title>Projectile frontend tests</title></head>
+  <body>
+    <pre id="results">RUNNING</pre>
+    <script type="module">
+      import { buildUploadFormData, getLatestAnalysis } from "../api.js";
+      import { pollAnalysis } from "../polling.js";
+
+      const checks = [];
+      const check = (condition, message) => {
+        if (!condition) throw new Error(message);
+      };
+      const test = async (name, callback) => {
+        try {
+          await callback();
+          checks.push(`PASS ${name}`);
+        } catch (error) {
+          checks.push(`FAIL ${name}: ${error.message}`);
+        }
+      };
+
+      await test("FormData: обычные файлы без relative_paths", () => {
+        const form = buildUploadFormData([new File(["a"], "ТЗ.pdf"), new File(["b"], "План.docx")]);
+        check(form.getAll("files").length === 2, "ожидалось два поля files");
+        check(form.getAll("relative_paths").length === 0, "relative_paths не должны передаваться");
+      });
+
+      await test("FormData: папка с полным набором relative_paths", () => {
+        const first = new File(["a"], "ТЗ.pdf");
+        const second = new File(["b"], "План.docx");
+        Object.defineProperty(first, "webkitRelativePath", { value: "Проект/ТЗ.pdf" });
+        Object.defineProperty(second, "webkitRelativePath", { value: "Проект/План.docx" });
+        const form = buildUploadFormData([first, second]);
+        check(form.getAll("relative_paths").length === 2, "ожидалось два пути");
+      });
+
+      await test("Polling: ready и requires_input завершают опрос", async () => {
+        for (const terminalStatus of ["ready", "requires_input"]) {
+          const states = [{ status: "queued" }, { status: terminalStatus }];
+          const result = await pollAnalysis({
+            fetchRun: async () => states.shift(),
+            onUpdate: () => {},
+            wait: async () => {},
+          });
+          check(result.status === terminalStatus, `${terminalStatus} не завершил polling`);
+        }
+      });
+
+      await test("Polling: failed возвращает ошибки", async () => {
+        const result = await pollAnalysis({
+          fetchRun: async () => ({ status: "failed", errors: [{ message: "test" }] }),
+          onUpdate: () => {},
+        });
+        check(result.errors[0].message === "test", "ошибка backend потеряна");
+      });
+
+      await test("Восстановление использует analyses/latest", async () => {
+        const originalFetch = window.fetch;
+        let requestedUrl = "";
+        window.fetch = async (url) => {
+          requestedUrl = url;
+          return new Response(JSON.stringify({ status: "ready" }), { status: 200 });
+        };
+        try {
+          await getLatestAnalysis("http://localhost:8000", "project-id");
+          check(requestedUrl.endsWith("/api/v1/projects/project-id/analyses/latest"), "неверный endpoint");
+        } finally {
+          window.fetch = originalFetch;
+        }
+      });
+
+      const failed = checks.some((line) => line.startsWith("FAIL"));
+      const results = document.querySelector("#results");
+      results.dataset.status = failed ? "failed" : "passed";
+      results.textContent = checks.join("\n");
+      document.title = failed ? "FAIL" : "PASS";
+    </script>
+  </body>
+</html>

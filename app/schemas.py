@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.analysis_contracts import (
+    DataGap,
+    DataIssue,
+    DocumentDigest,
+    ExtractedFact,
+    MaterialQuestion,
+)
+
+
+class ProjectCreate(BaseModel):
+    id: uuid.UUID | None = None
+    name: str = Field(min_length=1, max_length=300)
+
+
+class ProjectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class UploadedDocumentResponse(BaseModel):
+    id: uuid.UUID
+    original_filename: str
+    source_path: str
+    media_type: str
+    size_bytes: int
+    sha256: str
+    version: int
+    duplicate: bool
+
+
+class DocumentUploadResponse(BaseModel):
+    project_id: uuid.UUID
+    upload_run_id: uuid.UUID
+    status: Literal["uploaded"]
+    documents: list[UploadedDocumentResponse]
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+    database: Literal["ok"]
+
+
+AnalysisStatus = Literal[
+    "queued", "extracting", "analyzing", "requires_input", "ready", "failed"
+]
+
+
+class AnalysisRunCreate(BaseModel):
+    force_reextract: bool = False
+    question_policy: Literal["material_only"] = "material_only"
+
+
+class AnalysisRunAccepted(BaseModel):
+    run_id: uuid.UUID
+    project_id: uuid.UUID
+    status: AnalysisStatus
+    document_ids: list[uuid.UUID]
+
+
+class ProjectAnalysisResponse(BaseModel):
+    id: uuid.UUID
+    project_type_code: str | None
+    confidence: Literal["low", "medium", "high"]
+    summary: str
+    rationale: str
+    facts: list[ExtractedFact]
+    assumptions: list[str]
+    issues: list[DataIssue]
+    gaps: list[DataGap]
+    questions: list[MaterialQuestion]
+    warnings: list[str]
+    document_digests: list[DocumentDigest]
+    source_document_ids: list[uuid.UUID]
+    model_name: str
+    prompt_version: str
+    created_at: datetime
+
+
+class AnalysisRunResponse(BaseModel):
+    run_id: uuid.UUID
+    project_id: uuid.UUID
+    status: AnalysisStatus
+    current_step: str
+    document_ids: list[uuid.UUID]
+    errors: list[dict]
+    result: ProjectAnalysisResponse | None = None
+    created_at: datetime
+    updated_at: datetime

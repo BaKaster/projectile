@@ -1,0 +1,525 @@
+{
+  "schema_version": "1.0.0",
+  "catalog": "MONS company project types",
+  "language": "ru",
+  "sources": [
+    {
+      "file": "Данные для стажёров/Данные для стажёров_/Продукты направлений.pdf",
+      "pages": 2,
+      "directions": [
+        "DIT"
+      ]
+    },
+    {
+      "file": "Данные для стажёров/Данные для стажёров_/Продукты (Решения в CRM) производственных направлений - MONS - Confluence ITA.pdf",
+      "pages": 1,
+      "directions": [
+        "SEC"
+      ]
+    }
+  ],
+  "field_notes": {
+    "typical_duration_months": "Срок в месяцах из исходной таблицы.",
+    "engagement_model": "Характер проекта из исходной таблицы: разовый или возобновляемый.",
+    "classification_hints": "Поисковые признаки нормализованы из названия и описания; это подсказки, а не исчерпывающие правила."
+  },
+  "classification_policy": {
+    "result_field": "project_type_code",
+    "allowed_codes_only": true,
+    "prefer_explicit_scope_over_keywords": true,
+    "security_context_selects_direction": "SEC",
+    "infrastructure_support_cloud_context_selects_direction": "DIT",
+    "ambiguous_result": "requires_input",
+    "ambiguity_note": "Если ТЗ объединяет несколько самостоятельных предметов поставки или работ, не выбирать код только по одному ключевому слову: выделить основной предмет либо запросить уточнение."
+  },
+  "directions": [
+    {
+      "code": "DIT",
+      "source_name": "Направление DIT (exSUP)",
+      "aliases": [
+        "SUP",
+        "exSUP"
+      ],
+      "classification_scope": [
+        "ИТ-поддержка",
+        "ИТ-инфраструктура",
+        "облачные сервисы",
+        "поставка ПО и оборудования"
+      ],
+      "project_types": [
+        {
+          "code": "SUP_Complex",
+          "name": "Комплексная поддержка",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "комплексная ИТ-поддержка",
+            "единый договор поддержки",
+            "поддержка нескольких слоёв ИТ"
+          ]
+        },
+        {
+          "code": "SUP_L1",
+          "name": "Колл-центр, поддержка",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 6,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "первая линия поддержки",
+            "L1",
+            "service desk",
+            "help desk",
+            "колл-центр",
+            "приём и регистрация обращений"
+          ]
+        },
+        {
+          "code": "SUP_L2",
+          "name": "Поддержка пользователей и рабочих мест",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "вторая линия поддержки",
+            "L2",
+            "поддержка пользователей",
+            "поддержка рабочих мест",
+            "АРМ"
+          ]
+        },
+        {
+          "code": "SUP_L3_HW",
+          "name": "Инфраструктура с аппаратной поддержкой",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "третья линия поддержки",
+            "L3",
+            "аппаратная поддержка инфраструктуры",
+            "поддержка серверов и оборудования"
+          ]
+        },
+        {
+          "code": "SUP_L3_SW",
+          "name": "Инфраструктура без аппаратной поддержки",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "третья линия поддержки",
+            "L3",
+            "поддержка программной инфраструктуры",
+            "без аппаратной поддержки"
+          ]
+        },
+        {
+          "code": "SUP_SUPPLIER",
+          "name": "Проекты с подрядом",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "подряд",
+            "субподряд",
+            "сторонний подрядчик",
+            "внешний исполнитель"
+          ]
+        },
+        {
+          "code": "SUP_IT_Audit",
+          "name": "Задачи, связанные с обследованием инфраструктуры и бизнес-процессов",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 3,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "ИТ-аудит",
+            "обследование инфраструктуры",
+            "обследование бизнес-процессов",
+            "инвентаризация",
+            "анализ текущего состояния"
+          ]
+        },
+        {
+          "code": "SUP_IT_Consulting",
+          "name": "Проектирование архитектур и регламентирование",
+          "details": "Проектирование архитектуры инфраструктуры, DR, сетей, СРК, мониторинга и т. д.; регламентирование.",
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 3,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "ИТ-консалтинг",
+            "проектирование архитектуры",
+            "disaster recovery",
+            "DR",
+            "проектирование сети",
+            "проектирование СРК",
+            "проектирование мониторинга",
+            "разработка регламентов"
+          ]
+        },
+        {
+          "code": "SUP_IT_Implementation",
+          "name": "Создание и настройка инфраструктурных сервисов",
+          "details": "Создание и настройка виртуализации и инфраструктурных сервисов (AD, почта, VPN, сеть и т. п.); изменение конфигурации, масштабирование и обновление сервисов; кросс-доменные миграции AD, почты и пользователей; миграции между платформами виртуализации.",
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 3,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "внедрение ИТ-инфраструктуры",
+            "настройка виртуализации",
+            "Active Directory",
+            "AD",
+            "почтовая система",
+            "VPN",
+            "настройка сети",
+            "масштабирование",
+            "обновление сервисов",
+            "миграция домена",
+            "миграция пользователей",
+            "миграция виртуализации"
+          ]
+        },
+        {
+          "code": "SUP_Cloud_Consulting",
+          "name": "Разработка архитектуры/миграции и пр.",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 3,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "облачный консалтинг",
+            "облачная архитектура",
+            "план миграции в облако",
+            "cloud migration assessment"
+          ]
+        },
+        {
+          "code": "SUP_Cloud_IaaS",
+          "name": "Продажа облачных ресурсов и сервисов",
+          "details": null,
+          "offer_category": "cloud",
+          "offer_category_source": "Cloud",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "IaaS",
+            "облачные ресурсы",
+            "виртуальные машины в облаке",
+            "облачная инфраструктура"
+          ]
+        },
+        {
+          "code": "SUP_Cloud_PaaS",
+          "name": "Продажа платформ",
+          "details": "IaaS + базовые сервисы + лицензии + поддержка.",
+          "offer_category": "cloud",
+          "offer_category_source": "Cloud",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "PaaS",
+            "облачная платформа",
+            "платформа как услуга",
+            "IaaS с базовыми сервисами, лицензиями и поддержкой"
+          ]
+        },
+        {
+          "code": "SUP_Cloud_SaaS",
+          "name": "Продажа собственных SaaS-продуктов",
+          "details": null,
+          "offer_category": "cloud",
+          "offer_category_source": "Cloud",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "SaaS",
+            "собственный SaaS-продукт",
+            "программное обеспечение как услуга"
+          ]
+        },
+        {
+          "code": "SUP_Cloud_Subscription",
+          "name": "Продажа ПО сторонних вендоров по модели подписки",
+          "details": null,
+          "offer_category": "cloud",
+          "offer_category_source": "Cloud",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "подписка на ПО",
+            "ПО стороннего вендора",
+            "subscription",
+            "облачная подписка"
+          ]
+        },
+        {
+          "code": "SUP_App_Support",
+          "name": "Поддержка приложений",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "сопровождение приложений",
+            "поддержка приложений",
+            "application support",
+            "устранение ошибок приложения"
+          ]
+        },
+        {
+          "code": "SUP_IT_office",
+          "name": "Внедрение офисных пакетов (Российское ПО)",
+          "details": null,
+          "offer_category": "software",
+          "offer_category_source": "ПО",
+          "typical_duration_months": 1,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "внедрение офисного пакета",
+            "российский офисный пакет",
+            "Р7-Офис",
+            "МойОфис",
+            "импортозамещение Microsoft Office"
+          ]
+        },
+        {
+          "code": "SUP_import_sub_infra",
+          "name": "Импортозамещение инфраструктуры",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 4,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "импортозамещение инфраструктуры",
+            "переход на российское ПО",
+            "замена зарубежной инфраструктуры",
+            "миграция на отечественную платформу"
+          ]
+        },
+        {
+          "code": "SUP_HW",
+          "name": "Проекты по поставке оборудования",
+          "details": "Поставка оборудования по спецификации. Проекты, закрываемые по накладной.",
+          "offer_category": "hardware",
+          "offer_category_source": "Оборудование",
+          "typical_duration_months": 2,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": "2026-04-01",
+          "classification_hints": [
+            "поставка оборудования",
+            "спецификация оборудования",
+            "серверы",
+            "СХД",
+            "сетевое оборудование",
+            "закрытие по накладной"
+          ]
+        },
+        {
+          "code": "SUP_SW",
+          "name": "Проекты по поставке ПО",
+          "details": "Поставка лицензий по лицензионному договору.",
+          "offer_category": "software",
+          "offer_category_source": "ПО",
+          "typical_duration_months": 2,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": "2026-04-01",
+          "classification_hints": [
+            "поставка ПО",
+            "лицензии",
+            "лицензионный договор",
+            "закупка программного обеспечения"
+          ]
+        },
+        {
+          "code": "SUP_Leasing",
+          "name": "Аренда оборудования",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": "2026-04-01",
+          "classification_hints": [
+            "аренда оборудования",
+            "лизинг оборудования",
+            "оборудование во временное пользование"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "SEC",
+      "source_name": "Направление SEC",
+      "aliases": [
+        "Security",
+        "Информационная безопасность",
+        "ИБ"
+      ],
+      "classification_scope": [
+        "информационная безопасность",
+        "кибербезопасность",
+        "защита ИТ-систем"
+      ],
+      "project_types": [
+        {
+          "code": "SEC_Audit",
+          "name": "Аудит инфраструктуры",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 3,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "аудит информационной безопасности",
+            "аудит защищённости инфраструктуры",
+            "анализ уязвимостей",
+            "оценка соответствия требованиям ИБ"
+          ]
+        },
+        {
+          "code": "SEC_Support",
+          "name": "Проекты по поддержке системы",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 12,
+          "engagement_model": "renewable",
+          "engagement_model_source": "Возобновляемая",
+          "available_from": null,
+          "classification_hints": [
+            "поддержка системы информационной безопасности",
+            "сопровождение средств защиты",
+            "техническая поддержка ИБ-системы"
+          ]
+        },
+        {
+          "code": "SEC_Implementation",
+          "name": "Услуга по внедрению системы",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 6,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "внедрение системы информационной безопасности",
+            "внедрение средства защиты",
+            "настройка ИБ-системы",
+            "развёртывание решения ИБ"
+          ]
+        },
+        {
+          "code": "SEC_HW",
+          "name": "Поставка оборудования",
+          "details": null,
+          "offer_category": "hardware",
+          "offer_category_source": "Оборудование",
+          "typical_duration_months": 2,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "поставка оборудования информационной безопасности",
+            "аппаратное средство защиты",
+            "security appliance",
+            "межсетевой экран"
+          ]
+        },
+        {
+          "code": "SEC_SW",
+          "name": "Поставка лицензий по лицензионному договору",
+          "details": null,
+          "offer_category": "software",
+          "offer_category_source": "ПО",
+          "typical_duration_months": 2,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "лицензии ПО информационной безопасности",
+            "лицензия на средство защиты",
+            "антивирусные лицензии",
+            "лицензионный договор ИБ"
+          ]
+        },
+        {
+          "code": "SEC_Complex",
+          "name": "Комплексная поддержка",
+          "details": null,
+          "offer_category": "services",
+          "offer_category_source": "Услуги",
+          "typical_duration_months": 4,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "комплексная поддержка информационной безопасности",
+            "комплекс услуг ИБ",
+            "поддержка нескольких систем защиты"
+          ]
+        }
+      ]
+    }
+  ]
+}
