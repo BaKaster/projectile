@@ -48,6 +48,21 @@ docker compose down
 
 ## API
 
+### Чатовый сценарий
+
+Frontend использует проект как чат-сессию:
+
+- `POST /api/v1/chats` — новый чат;
+- `GET /api/v1/chats` — история;
+- `GET /api/v1/chats/{chatId}` — сообщения и последний анализ;
+- `POST /api/v1/chats/{chatId}/messages` — сообщение, создающее новый запуск анализа;
+- `POST /api/v1/projects/{projectId}/analysis-runs/{runId}/answers` — ответ на вопросы;
+- `POST /api/v1/projects/{projectId}/analysis-runs/{runId}/questions/skip` — пропуск вопросов;
+- `GET /api/v1/projects/{projectId}/analysis-runs/{runId}/report.pdf` — PDF-отчёт.
+
+Текст сообщения сохраняется как источник проекта и анализируется тем же pipeline, что и
+загруженные документы. Идентификатор чата совпадает с `projectId`.
+
 ### Создание проекта
 
 ```http

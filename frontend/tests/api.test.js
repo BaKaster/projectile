@@ -4,7 +4,11 @@ import {
   ApiError,
   buildUploadFormData,
   createProject,
+  createChat,
   getLatestAnalysis,
+  sendChatMessage,
+  answerAnalysisQuestions,
+  skipAnalysisQuestions,
   uploadDocuments,
 } from "../api.js";
 
@@ -65,4 +69,22 @@ test("latest analysis exposes a 404 as ApiError for restoration logic", async (c
     getLatestAnalysis("http://localhost:8000", "project-id"),
     (error) => error instanceof ApiError && error.status === 404,
   );
+});
+
+test("chat messages, answers and skip use their explicit endpoints", async (context) => {
+  const calls = [];
+  context.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url, options });
+    return mockResponse({ id: "ok" }, 200);
+  });
+
+  await createChat("http://localhost:8000", "Новый проект");
+  await sendChatMessage("http://localhost:8000", "chat-id", "Оцени проект");
+  await answerAnalysisQuestions("http://localhost:8000", "chat-id", "run-id", "Срок — декабрь");
+  await skipAnalysisQuestions("http://localhost:8000", "chat-id", "run-id");
+
+  assert.equal(calls[0].url, "http://localhost:8000/api/v1/chats");
+  assert.equal(calls[1].url, "http://localhost:8000/api/v1/chats/chat-id/messages");
+  assert.equal(calls[2].url, "http://localhost:8000/api/v1/projects/chat-id/analysis-runs/run-id/answers");
+  assert.equal(calls[3].url, "http://localhost:8000/api/v1/projects/chat-id/analysis-runs/run-id/questions/skip");
 });

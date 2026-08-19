@@ -1,442 +1,292 @@
 import {
-  ApiError,
-  createProject,
+  analysisReportUrl,
+  answerAnalysisQuestions,
+  createChat,
   formatApiError,
   getAnalysisRun,
+  getChat,
   getHealth,
-  getLatestAnalysis,
-  startAnalysis,
+  listChats,
+  sendChatMessage,
+  skipAnalysisQuestions,
   uploadDocuments,
 } from "./api.js";
 import { ACTIVE_STATUSES, pollAnalysis, SUCCESS_STATUSES } from "./polling.js";
 
 const apiBase = window.PROJECTILE_CONFIG?.apiBase || "http://localhost:8000";
-const storageKey = "projectile.activeProject";
-
-const state = {
-  project: loadProject(),
-  files: [],
-  pollController: null,
-};
-
+const state = { chat: null, run: null, files: [], busy: false, pollController: null };
+const $ = (selector) => document.querySelector(selector);
 const elements = {
-  views: [...document.querySelectorAll("main > .workspace")],
-  steps: [...document.querySelectorAll(".step")],
-  apiState: document.querySelector("#api-state span:last-child"),
-  projectForm: document.querySelector("#project-form"),
-  projectName: document.querySelector("#project-name"),
-  projectError: document.querySelector("#project-error"),
-  activeProjectName: document.querySelector("#active-project-name"),
-  newProjectButton: document.querySelector("#new-project-button"),
-  dropZone: document.querySelector("#drop-zone"),
-  chooseFiles: document.querySelector("#choose-files"),
-  chooseFolder: document.querySelector("#choose-folder"),
-  fileInput: document.querySelector("#file-input"),
-  folderInput: document.querySelector("#folder-input"),
-  selection: document.querySelector("#selection"),
-  selectionCount: document.querySelector("#selection-count"),
-  fileList: document.querySelector("#file-list"),
-  clearFiles: document.querySelector("#clear-files"),
-  analyzeButton: document.querySelector("#analyze-button"),
-  uploadError: document.querySelector("#upload-error"),
-  progressTitle: document.querySelector("#progress-title"),
-  progressDescription: document.querySelector("#progress-description"),
-  stages: [...document.querySelectorAll(".stage")],
-  resultTitle: document.querySelector("#result-title"),
-  resultContent: document.querySelector("#result-content"),
-  repeatAnalysis: document.querySelector("#repeat-analysis"),
-  resultNewProject: document.querySelector("#result-new-project"),
-  failureErrors: document.querySelector("#failure-errors"),
-  retryAnalysis: document.querySelector("#retry-analysis"),
-  toast: document.querySelector("#toast"),
+  sidebar: $("#sidebar"), overlay: $("#sidebar-overlay"), history: $("#chat-history"),
+  newChat: $("#new-chat"), openSidebar: $("#open-sidebar"), closeSidebar: $("#close-sidebar"),
+  title: $("#chat-title"), subtitle: $("#chat-subtitle"), statusDot: $("#status-dot"), apiLabel: $("#api-label"),
+  conversation: $("#conversation"), empty: $("#empty-state"), download: $("#download-pdf"),
+  composer: $("#composer"), input: $("#message-input"), send: $("#send-button"),
+  attach: $("#attach-button"), fileInput: $("#file-input"), pendingFiles: $("#pending-files"),
+  questionActions: $("#question-actions"), skip: $("#skip-questions"), toast: $("#toast"),
 };
-
-elements.apiState.textContent = `API: ${apiBase.replace(/^https?:\/\//, "")}`;
-
-async function checkApiHealth() {
-  const dot = document.querySelector(".status-dot");
-  try {
-    const health = await getHealth(apiBase);
-    dot.classList.toggle("offline", health.status !== "ok" || health.database !== "ok");
-    elements.apiState.title = "Backend доступен";
-  } catch {
-    dot.classList.add("offline");
-    elements.apiState.title = "Backend недоступен";
-  }
-}
-
-function loadProject() {
-  try {
-    return JSON.parse(localStorage.getItem(storageKey)) || null;
-  } catch {
-    return null;
-  }
-}
-
-function saveProject(project) {
-  state.project = { id: project.id, name: project.name };
-  localStorage.setItem(storageKey, JSON.stringify(state.project));
-}
-
-function showView(id, step) {
-  for (const view of elements.views) view.classList.toggle("hidden", view.id !== id);
-  for (const item of elements.steps) {
-    const itemStep = Number(item.dataset.step);
-    item.classList.toggle("active", itemStep === step);
-    item.classList.toggle("done", itemStep < step);
-  }
-  document.querySelector(`#${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-}
-
-function setBusy(button, busy, label) {
-  if (!button.dataset.label) button.dataset.label = button.innerHTML;
-  button.disabled = busy;
-  button.innerHTML = busy ? label : button.dataset.label;
-}
 
 function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.remove("hidden");
-  window.setTimeout(() => elements.toast.classList.add("hidden"), 3500);
+  setTimeout(() => elements.toast.classList.add("hidden"), 4000);
 }
 
-function resetProject() {
+function setBusy(value) {
+  state.busy = value;
+  elements.send.disabled = value;
+  elements.input.disabled = value;
+  elements.attach.disabled = value;
+}
+
+function closeSidebar() {
+  elements.sidebar.classList.remove("open");
+  elements.overlay.classList.remove("open");
+}
+
+function resizeInput() {
+  elements.input.style.height = "auto";
+  elements.input.style.height = `${Math.min(elements.input.scrollHeight, 160)}px`;
+}
+
+async function checkHealth() {
+  try {
+    const health = await getHealth(apiBase);
+    elements.statusDot.classList.toggle("offline", health.status !== "ok");
+    elements.apiLabel.textContent = health.status === "ok" ? "API подключён" : "Ошибка API";
+  } catch {
+    elements.statusDot.classList.add("offline");
+    elements.apiLabel.textContent = "API недоступен";
+  }
+}
+
+async function refreshHistory() {
+  try {
+    const chats = await listChats(apiBase);
+    elements.history.replaceChildren();
+    if (!chats.length) {
+      const empty = document.createElement("p");
+      empty.className = "history-empty";
+      empty.textContent = "Здесь появятся ваши диалоги и результаты анализа.";
+      elements.history.append(empty);
+      return;
+    }
+    for (const chat of chats) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `history-item${state.chat?.id === chat.id ? " active" : ""}`;
+      const title = document.createElement("strong");
+      title.textContent = chat.name;
+      const preview = document.createElement("small");
+      preview.textContent = chat.last_message || statusLabel(chat.latest_status) || "Новый чат";
+      button.append(title, preview);
+      button.addEventListener("click", () => openChat(chat.id));
+      elements.history.append(button);
+    }
+  } catch (error) {
+    elements.history.innerHTML = '<p class="history-empty">Не удалось загрузить историю.</p>';
+  }
+}
+
+function statusLabel(status) {
+  return ({ queued: "В очереди", extracting: "Читаем документы", analyzing: "Анализируем", requires_input: "Нужны ответы", ready: "Анализ готов", failed: "Ошибка анализа" })[status] || "";
+}
+
+function newChat() {
   state.pollController?.abort();
-  state.project = null;
-  state.files = [];
-  localStorage.removeItem(storageKey);
-  elements.projectForm.reset();
-  renderFiles();
-  showView("create-view", 1);
+  state.chat = null; state.run = null; state.files = [];
+  elements.title.textContent = "Новый чат";
+  elements.subtitle.textContent = "AI-анализ проектной документации";
+  elements.conversation.replaceChildren(elements.empty);
+  elements.empty.classList.remove("hidden");
+  elements.download.classList.add("hidden");
+  elements.questionActions.classList.add("hidden");
+  elements.input.placeholder = "Опишите проект или задайте вопрос…";
+  renderPendingFiles(); refreshHistory(); closeSidebar(); elements.input.focus();
 }
 
-function showUpload() {
-  elements.activeProjectName.textContent = state.project.name;
-  elements.uploadError.textContent = "";
-  showView("upload-view", 2);
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} КБ`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} МБ`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} ГБ`;
-}
-
-function fileExtension(filename) {
-  const extension = filename.split(".").pop();
-  return extension && extension !== filename ? extension.slice(0, 4).toUpperCase() : "FILE";
-}
-
-function addFiles(fileList) {
-  const incoming = [...fileList];
-  if (!incoming.length) return;
-  const known = new Set(state.files.map((file) => `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}`));
-  for (const file of incoming) {
-    const key = `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}`;
-    if (!known.has(key)) {
-      state.files.push(file);
-      known.add(key);
-    }
-  }
-  renderFiles();
-}
-
-function renderFiles() {
-  elements.selection.classList.toggle("hidden", state.files.length === 0);
-  elements.selectionCount.textContent = `${state.files.length} ${pluralize(state.files.length, "документ", "документа", "документов")}`;
-  elements.fileList.replaceChildren();
-
-  for (const file of state.files.slice(0, 100)) {
-    const item = document.createElement("li");
-    const badge = document.createElement("span");
-    badge.className = "file-badge";
-    badge.textContent = fileExtension(file.name);
-    const name = document.createElement("span");
-    name.className = "file-name";
-    name.textContent = file.webkitRelativePath || file.name;
-    name.title = name.textContent;
-    const size = document.createElement("span");
-    size.className = "file-size";
-    size.textContent = formatSize(file.size);
-    item.append(badge, name, size);
-    elements.fileList.append(item);
-  }
-  if (state.files.length > 100) {
-    const item = document.createElement("li");
-    item.textContent = `И ещё ${state.files.length - 100}…`;
-    elements.fileList.append(item);
-  }
-}
-
-function pluralize(number, one, few, many) {
-  const lastTwo = number % 100;
-  const last = number % 10;
-  if (lastTwo >= 11 && lastTwo <= 19) return many;
-  if (last === 1) return one;
-  if (last >= 2 && last <= 4) return few;
-  return many;
-}
-
-function updateProgress(run) {
-  const order = ["queued", "extracting", "analyzing"];
-  const currentIndex = Math.max(0, order.indexOf(run.status));
-  const titles = {
-    queued: "Готовим документы",
-    extracting: "Извлекаем данные",
-    analyzing: "Собираем картину проекта",
-  };
-  elements.progressTitle.textContent = titles[run.status] || "Изучаем документы";
-  if (run.current_step && run.current_step !== run.status) {
-    elements.progressDescription.textContent = `Текущий этап: ${run.current_step}. Длительная обработка сканов и аудио — нормальна.`;
-  }
-  for (const stage of elements.stages) {
-    const index = order.indexOf(stage.dataset.status);
-    stage.classList.toggle("complete", index < currentIndex);
-    stage.classList.toggle("current", index === currentIndex);
-  }
-}
-
-async function beginPolling(runId, initialRun) {
-  state.pollController?.abort();
-  state.pollController = new AbortController();
-  showView("progress-view", 3);
-  if (initialRun) updateProgress(initialRun);
-
+async function openChat(id) {
+  if (state.busy) return;
+  state.pollController?.abort(); closeSidebar();
   try {
-    const run = await pollAnalysis({
-      fetchRun: (signal) => getAnalysisRun(apiBase, state.project.id, runId, signal),
-      onUpdate: updateProgress,
-      signal: state.pollController.signal,
-    });
-    if (!run) return;
-    if (SUCCESS_STATUSES.has(run.status)) renderResult(run);
-    else if (run.status === "failed") renderFailure(run.errors);
-  } catch (error) {
-    if (error.name !== "AbortError") {
-      showToast(formatApiError(error));
-      window.setTimeout(() => {
-        if (state.project) restoreLatest();
-      }, 5000);
+    const chat = await getChat(apiBase, id);
+    state.chat = chat; state.run = chat.latest_analysis;
+    elements.title.textContent = chat.name;
+    elements.subtitle.textContent = "История анализа проекта";
+    elements.conversation.replaceChildren();
+    for (const message of chat.messages) renderUserMessage(message.content, []);
+    if (chat.latest_analysis) {
+      if (ACTIVE_STATUSES.has(chat.latest_analysis.status)) {
+        renderThinking(chat.latest_analysis);
+        beginPolling(chat.latest_analysis.run_id);
+      } else if (SUCCESS_STATUSES.has(chat.latest_analysis.status)) renderAnalysis(chat.latest_analysis);
+      else renderFailure(chat.latest_analysis.errors);
     }
+    updateQuestionMode(); refreshHistory(); scrollToBottom();
+  } catch (error) { showToast(formatApiError(error)); }
+}
+
+function messageShell(role, label) {
+  const message = document.createElement("article");
+  message.className = `message ${role}`;
+  const avatar = document.createElement("div"); avatar.className = "avatar"; avatar.textContent = role === "user" ? "Вы" : "P";
+  const body = document.createElement("div"); body.className = "message-body";
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = label;
+  body.append(meta); message.append(avatar, body); elements.conversation.append(message);
+  return body;
+}
+
+function renderUserMessage(content, files) {
+  elements.empty.classList.add("hidden");
+  const body = messageShell("user", "Вы");
+  const text = document.createElement("div"); text.className = "message-text"; text.textContent = content; body.append(text);
+  if (files.length) {
+    const container = document.createElement("div"); container.className = "message-files";
+    for (const file of files) { const chip = document.createElement("span"); chip.className = "file-chip"; chip.textContent = file.name; container.append(chip); }
+    body.append(container);
   }
 }
 
-async function runAnalysis() {
-  showView("progress-view", 3);
-  updateProgress({ status: "queued", current_step: "queued" });
-  try {
-    const accepted = await startAnalysis(apiBase, state.project.id);
-    await beginPolling(accepted.run_id, accepted);
-  } catch (error) {
-    elements.uploadError.textContent = formatApiError(error);
-    showUpload();
-  }
+function renderThinking(run) {
+  $("#thinking-message")?.remove();
+  const body = messageShell("assistant", "Projectile");
+  body.parentElement.id = "thinking-message";
+  const row = document.createElement("div"); row.className = "thinking";
+  const dots = document.createElement("span"); dots.className = "thinking-dots"; dots.innerHTML = "<i></i><i></i><i></i>";
+  const text = document.createElement("span"); text.textContent = statusLabel(run.status) || "Готовим анализ";
+  row.append(dots, text); body.append(row); scrollToBottom();
 }
 
-async function restoreLatest() {
-  const controller = new AbortController();
-  state.pollController = controller;
-  try {
-    const run = await getLatestAnalysis(apiBase, state.project.id, controller.signal);
-    if (ACTIVE_STATUSES.has(run.status)) await beginPolling(run.run_id, run);
-    else if (SUCCESS_STATUSES.has(run.status)) renderResult(run);
-    else renderFailure(run.errors);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) showUpload();
-    else {
-      showUpload();
-      elements.uploadError.textContent = formatApiError(error);
-    }
-  }
+function analysisSection(title, content) {
+  const section = document.createElement("section"); section.className = "analysis-section";
+  const heading = document.createElement("h3"); heading.textContent = title; section.append(heading, content); return section;
 }
 
-function section(title, content) {
-  const container = document.createElement("section");
-  container.className = "result-section";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  container.append(heading, content);
-  return container;
+function textBlock(text) { const p = document.createElement("p"); p.textContent = text; return p; }
+function listBlock(items, map = (item) => item) {
+  if (!items?.length) return textBlock("Нет существенных пунктов.");
+  const list = document.createElement("ul"); list.className = "analysis-list";
+  for (const item of items) { const li = document.createElement("li"); li.textContent = map(item); list.append(li); } return list;
+}
+function gridBlock(items, cardBuilder) {
+  if (!items?.length) return textBlock("Нет существенных пунктов.");
+  const grid = document.createElement("div"); grid.className = "analysis-grid";
+  for (const item of items) grid.append(cardBuilder(item)); return grid;
+}
+function card(title, text, extraClass = "") {
+  const item = document.createElement("div"); item.className = `analysis-card ${extraClass}`;
+  const strong = document.createElement("strong"); strong.textContent = title; item.append(strong, document.createTextNode(text)); return item;
 }
 
-function paragraph(text, className = "") {
-  const element = document.createElement("p");
-  element.className = className;
-  element.textContent = text;
-  return element;
-}
-
-function bulletList(items, emptyText) {
-  if (!items?.length) return paragraph(emptyText, "empty-copy");
-  const list = document.createElement("ul");
-  list.className = "bullet-list";
-  for (const text of items) {
-    const item = document.createElement("li");
-    item.textContent = text;
-    list.append(item);
-  }
-  return list;
-}
-
-function cards(items, makeCard, emptyText) {
-  if (!items?.length) return paragraph(emptyText, "empty-copy");
-  const container = document.createElement("div");
-  container.className = "cards";
-  for (const item of items) container.append(makeCard(item));
-  return container;
-}
-
-function dataCard(title, text, meta = "", className = "") {
-  const card = document.createElement("article");
-  card.className = `data-card ${className}`.trim();
-  const heading = document.createElement("strong");
-  heading.textContent = title;
-  card.append(heading, paragraph(text));
-  if (meta) {
-    const small = document.createElement("small");
-    small.textContent = meta;
-    card.append(small);
-  }
-  return card;
-}
-
-function renderResult(run) {
+function renderAnalysis(run) {
+  $("#thinking-message")?.remove(); $("#analysis-message")?.remove();
   const result = run.result;
-  if (!result) {
-    renderFailure([{ message: "Backend завершил анализ без результата" }]);
-    return;
-  }
-  showView("result-view", 4);
-  elements.resultTitle.textContent = run.status === "requires_input" ? "Нужны уточнения" : "Проект разобран";
-  elements.resultContent.replaceChildren();
-
-  if (run.status === "requires_input") {
-    elements.resultContent.append(paragraph(
-      "Для точной оценки не хватает существенных данных. Ответы пока нельзя отправить через интерфейс — endpoint ещё не реализован.",
-      "requires-banner",
-    ));
-  }
-
+  if (!result) { renderFailure([{ message: "Backend завершил анализ без результата" }]); return; }
+  state.run = run;
+  const body = messageShell("assistant", "Projectile"); body.parentElement.id = "analysis-message";
+  const root = document.createElement("div"); root.className = "analysis";
+  const top = document.createElement("div"); top.className = "analysis-top";
   const overview = document.createElement("div");
-  overview.className = "result-overview";
-  const main = document.createElement("div");
-  const label = document.createElement("span");
-  label.className = "kicker";
-  label.textContent = "Тип проекта";
-  const type = document.createElement("div");
-  type.className = "type-code";
-  type.textContent = result.project_type_code || "Не определён однозначно";
-  main.append(label, type, paragraph(result.summary, "summary"));
-  const confidenceCard = document.createElement("div");
-  confidenceCard.className = "confidence-card";
-  const confidenceLabel = document.createElement("small");
-  confidenceLabel.textContent = "Уверенность модели";
-  const confidence = document.createElement("span");
-  confidence.className = `confidence ${result.confidence}`;
-  confidence.textContent = ({ low: "Низкая", medium: "Средняя", high: "Высокая" })[result.confidence] || result.confidence;
-  confidenceCard.append(confidenceLabel, confidence);
-  overview.append(main, confidenceCard);
-  elements.resultContent.append(overview);
-
-  elements.resultContent.append(section("Почему сделан такой вывод", paragraph(result.rationale)));
-  elements.resultContent.append(section("Факты", cards(
-    result.facts,
-    (fact) => dataCard(fact.name, fact.value, fact.source_document_ids?.length ? `Источники: ${fact.source_document_ids.join(", ")}` : ""),
-    "Подтверждённые факты не выделены.",
-  )));
-  elements.resultContent.append(section("Допущения", bulletList(result.assumptions, "Допущений нет.")));
-  elements.resultContent.append(section("Проблемы и риски", cards(
-    result.issues,
-    (issue) => dataCard(issue.description, issue.impact_on_estimate, issue.recommended_action ? `Что сделать: ${issue.recommended_action}` : issue.code, `issue-card ${issue.severity}`),
-    "Существенных проблем не обнаружено.",
-  )));
-  elements.resultContent.append(section("Пробелы в данных", cards(
-    result.gaps,
-    (gap) => dataCard(gap.description, gap.suggested_assumption || "Допущение не предложено", `Влияние: ${gap.impact}${gap.blocking ? " · блокирует оценку" : ""}`, `issue-card ${gap.impact}`),
-    "Критичных пробелов в данных нет.",
-  )));
-  elements.resultContent.append(section("Вопросы", cards(
-    result.questions,
-    (question) => dataCard(question.question, question.reason, question.blocking ? "Нужен ответ для продолжения" : "Влияет на точность", "question-card"),
-    "Дополнительных вопросов нет.",
-  )));
-  elements.resultContent.append(section("Предупреждения", bulletList(result.warnings, "Предупреждений нет.")));
+  const label = document.createElement("div"); label.className = "analysis-label"; label.textContent = "Результат анализа";
+  const type = document.createElement("div"); type.className = "analysis-type"; type.textContent = result.project_type_code || "Тип не определён";
+  const summary = document.createElement("p"); summary.className = "analysis-summary"; summary.textContent = result.summary;
+  overview.append(label, type, summary);
+  const confidence = document.createElement("span"); confidence.className = "confidence"; confidence.textContent = `Уверенность: ${{ low: "низкая", medium: "средняя", high: "высокая" }[result.confidence]}`;
+  top.append(overview, confidence); root.append(top);
+  root.append(analysisSection("Обоснование", textBlock(result.rationale)));
+  root.append(analysisSection("Факты", gridBlock(result.facts, (fact) => card(fact.name, fact.value))));
+  root.append(analysisSection("Допущения", listBlock(result.assumptions)));
+  root.append(analysisSection("Проблемы и риски", gridBlock(result.issues, (issue) => card(issue.description, issue.impact_on_estimate))));
+  root.append(analysisSection("Вопросы", gridBlock(result.questions, (question) => card(question.question, question.reason, "question"))));
+  root.append(analysisSection("Предупреждения", listBlock(result.warnings)));
+  body.append(root);
+  elements.download.href = analysisReportUrl(apiBase, state.chat.id, run.run_id);
+  elements.download.classList.remove("hidden");
+  updateQuestionMode(); scrollToBottom(); refreshHistory();
 }
 
 function renderFailure(errors = []) {
-  showView("failed-view", 3);
-  elements.failureErrors.replaceChildren();
-  const normalized = errors.length ? errors : [{ message: "Backend не передал детали ошибки" }];
-  for (const error of normalized) {
-    const line = document.createElement("div");
-    line.textContent = typeof error === "string" ? error : error.message || error.detail || JSON.stringify(error);
-    elements.failureErrors.append(line);
-  }
+  $("#thinking-message")?.remove();
+  const body = messageShell("assistant", "Projectile");
+  const text = document.createElement("div"); text.className = "message-text";
+  text.textContent = `Не удалось завершить анализ. ${errors.map((error) => error.message || error.detail || String(error)).join("; ")}`;
+  body.append(text); scrollToBottom();
 }
 
-elements.projectForm.addEventListener("submit", async (event) => {
+function updateQuestionMode() {
+  const requires = state.run?.status === "requires_input";
+  elements.questionActions.classList.toggle("hidden", !requires);
+  elements.input.placeholder = requires ? "Ответьте на вопросы для уточнения анализа…" : "Продолжите диалог или добавьте документы…";
+}
+
+async function beginPolling(runId) {
+  state.pollController?.abort(); state.pollController = new AbortController();
+  try {
+    const run = await pollAnalysis({
+      fetchRun: (signal) => getAnalysisRun(apiBase, state.chat.id, runId, signal),
+      onUpdate: (current) => { state.run = current; renderThinking(current); },
+      signal: state.pollController.signal,
+    });
+    if (!run) return;
+    state.run = run;
+    if (SUCCESS_STATUSES.has(run.status)) renderAnalysis(run); else renderFailure(run.errors);
+  } catch (error) { if (error.name !== "AbortError") showToast(formatApiError(error)); }
+  finally { setBusy(false); updateQuestionMode(); }
+}
+
+function renderPendingFiles() {
+  elements.pendingFiles.replaceChildren(); elements.pendingFiles.classList.toggle("hidden", !state.files.length);
+  state.files.forEach((file, index) => {
+    const item = document.createElement("span"); item.className = "pending-file"; item.append(document.createTextNode(file.name));
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×";
+    remove.addEventListener("click", () => { state.files.splice(index, 1); renderPendingFiles(); }); item.append(remove); elements.pendingFiles.append(item);
+  });
+}
+
+async function submitMessage(event) {
   event.preventDefault();
-  const name = elements.projectName.value.trim();
-  if (!name) return;
-  const button = elements.projectForm.querySelector("button");
-  elements.projectError.textContent = "";
-  setBusy(button, true, "Создаём…");
+  const content = elements.input.value.trim();
+  if ((!content && !state.files.length) || state.busy) return;
+  const sentFiles = [...state.files];
+  setBusy(true);
   try {
-    const project = await createProject(apiBase, name);
-    saveProject(project);
-    showUpload();
-  } catch (error) {
-    elements.projectError.textContent = formatApiError(error);
-  } finally {
-    setBusy(button, false);
-  }
-});
-
-elements.chooseFiles.addEventListener("click", (event) => { event.stopPropagation(); elements.fileInput.click(); });
-elements.chooseFolder.addEventListener("click", (event) => { event.stopPropagation(); elements.folderInput.click(); });
-elements.dropZone.addEventListener("click", () => elements.fileInput.click());
-elements.dropZone.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" || event.key === " ") elements.fileInput.click();
-});
-elements.fileInput.addEventListener("change", () => { addFiles(elements.fileInput.files); elements.fileInput.value = ""; });
-elements.folderInput.addEventListener("change", () => { addFiles(elements.folderInput.files); elements.folderInput.value = ""; });
-for (const eventName of ["dragenter", "dragover"]) {
-  elements.dropZone.addEventListener(eventName, (event) => { event.preventDefault(); elements.dropZone.classList.add("dragging"); });
+    if (!state.chat) {
+      state.chat = await createChat(apiBase, content.slice(0, 80) || "Анализ документов");
+      elements.title.textContent = state.chat.name;
+    }
+    if (sentFiles.length) await uploadDocuments(apiBase, state.chat.id, sentFiles, crypto.randomUUID());
+    const actualContent = content || "Проанализируй приложенные документы";
+    renderUserMessage(actualContent, sentFiles);
+    elements.input.value = ""; state.files = []; resizeInput(); renderPendingFiles();
+    const accepted = state.run?.status === "requires_input"
+      ? await answerAnalysisQuestions(apiBase, state.chat.id, state.run.run_id, actualContent)
+      : await sendChatMessage(apiBase, state.chat.id, actualContent);
+    state.run = accepted.analysis; renderThinking(accepted.analysis); refreshHistory();
+    await beginPolling(accepted.analysis.run_id);
+  } catch (error) { setBusy(false); showToast(formatApiError(error)); }
 }
-for (const eventName of ["dragleave", "drop"]) {
-  elements.dropZone.addEventListener(eventName, (event) => { event.preventDefault(); elements.dropZone.classList.remove("dragging"); });
-}
-elements.dropZone.addEventListener("drop", (event) => addFiles(event.dataTransfer.files));
-elements.clearFiles.addEventListener("click", () => { state.files = []; renderFiles(); });
-elements.newProjectButton.addEventListener("click", resetProject);
-elements.resultNewProject.addEventListener("click", resetProject);
-elements.repeatAnalysis.addEventListener("click", runAnalysis);
-elements.retryAnalysis.addEventListener("click", runAnalysis);
 
-elements.analyzeButton.addEventListener("click", async () => {
-  if (!state.files.length) return;
-  elements.uploadError.textContent = "";
-  setBusy(elements.analyzeButton, true, "Загружаем документы…");
+async function skipQuestions() {
+  if (!state.chat || state.run?.status !== "requires_input" || state.busy) return;
+  setBusy(true);
   try {
-    await uploadDocuments(apiBase, state.project.id, state.files, crypto.randomUUID());
-    state.files = [];
-    renderFiles();
-    await runAnalysis();
-  } catch (error) {
-    elements.uploadError.textContent = formatApiError(error);
-  } finally {
-    setBusy(elements.analyzeButton, false);
-  }
-});
+    state.run = await skipAnalysisQuestions(apiBase, state.chat.id, state.run.run_id);
+    renderAnalysis(state.run);
+  } catch (error) { showToast(formatApiError(error)); }
+  finally { setBusy(false); updateQuestionMode(); }
+}
 
+function scrollToBottom() { requestAnimationFrame(() => elements.conversation.scrollTo({ top: elements.conversation.scrollHeight, behavior: "smooth" })); }
+
+elements.composer.addEventListener("submit", submitMessage);
+elements.input.addEventListener("input", resizeInput);
+elements.input.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); elements.composer.requestSubmit(); } });
+elements.attach.addEventListener("click", () => elements.fileInput.click());
+elements.fileInput.addEventListener("change", () => { state.files.push(...elements.fileInput.files); elements.fileInput.value = ""; renderPendingFiles(); });
+elements.newChat.addEventListener("click", newChat); elements.skip.addEventListener("click", skipQuestions);
+elements.openSidebar.addEventListener("click", () => { elements.sidebar.classList.add("open"); elements.overlay.classList.add("open"); });
+elements.closeSidebar.addEventListener("click", closeSidebar); elements.overlay.addEventListener("click", closeSidebar);
+for (const suggestion of document.querySelectorAll("[data-prompt]")) suggestion.addEventListener("click", () => { elements.input.value = suggestion.dataset.prompt; resizeInput(); elements.input.focus(); });
 window.addEventListener("beforeunload", () => state.pollController?.abort());
 
-if (state.project?.id) {
-  elements.activeProjectName.textContent = state.project.name || "Без названия";
-  restoreLatest();
-} else {
-  showView("create-view", 1);
-}
-
-checkApiHealth();
+newChat(); checkHealth();

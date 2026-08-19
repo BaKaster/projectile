@@ -58,6 +58,48 @@ export function getHealth(apiBase, signal) {
   return request(apiBase, "/health", { signal });
 }
 
+export function createChat(apiBase, name) {
+  return request(apiBase, "/api/v1/chats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(name ? { name } : {}),
+  });
+}
+
+export function listChats(apiBase, signal) {
+  return request(apiBase, "/api/v1/chats", { signal });
+}
+
+export function getChat(apiBase, chatId, signal) {
+  return request(apiBase, `/api/v1/chats/${chatId}`, { signal });
+}
+
+export function sendChatMessage(apiBase, chatId, content) {
+  return request(apiBase, `/api/v1/chats/${chatId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function answerAnalysisQuestions(apiBase, projectId, runId, content) {
+  return request(apiBase, `/api/v1/projects/${projectId}/analysis-runs/${runId}/answers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function skipAnalysisQuestions(apiBase, projectId, runId) {
+  return request(apiBase, `/api/v1/projects/${projectId}/analysis-runs/${runId}/questions/skip`, {
+    method: "POST",
+  });
+}
+
+export function analysisReportUrl(apiBase, projectId, runId) {
+  return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.pdf`;
+}
+
 export function buildUploadFormData(files) {
   const form = new FormData();
   for (const file of files) form.append("files", file);

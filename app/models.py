@@ -43,6 +43,33 @@ class Project(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(300), nullable=False)
 
 
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="query")
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant', 'system')",
+            name="ck_chat_messages_role",
+        ),
+        CheckConstraint(
+            "kind IN ('query', 'answer', 'system')",
+            name="ck_chat_messages_kind",
+        ),
+        Index("ix_chat_messages_project_created", "project_id", "created_at"),
+    )
+
+
 class Document(Base):
     __tablename__ = "documents"
 

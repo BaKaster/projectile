@@ -98,3 +98,49 @@ class AnalysisRunResponse(BaseModel):
     result: ProjectAnalysisResponse | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ChatCreate(BaseModel):
+    name: str | None = Field(default=None, max_length=300)
+
+
+class ChatMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=50_000)
+
+
+class ChatMessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    role: Literal["user", "assistant", "system"]
+    kind: Literal["query", "answer", "system"]
+    content: str
+    created_at: datetime
+
+
+class ChatMessageAccepted(BaseModel):
+    message: ChatMessageResponse
+    analysis: AnalysisRunAccepted
+
+
+class ChatSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    last_message: str | None
+    latest_status: AnalysisStatus | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatDetail(BaseModel):
+    id: uuid.UUID
+    name: str
+    messages: list[ChatMessageResponse]
+    latest_analysis: AnalysisRunResponse | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuestionAnswerCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=50_000)

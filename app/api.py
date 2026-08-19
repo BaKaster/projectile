@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import textwrap
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -14,6 +17,7 @@ from fastapi import (
     Header,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -25,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.models import (
     AnalysisRun,
+    ChatMessage,
     Document,
     DocumentExtraction,
     ProcessingRun,
@@ -36,10 +41,17 @@ from app.schemas import (
     AnalysisRunAccepted,
     AnalysisRunCreate,
     AnalysisRunResponse,
+    ChatCreate,
+    ChatDetail,
+    ChatMessageAccepted,
+    ChatMessageCreate,
+    ChatMessageResponse,
+    ChatSummary,
     DocumentUploadResponse,
     HealthResponse,
     ProjectCreate,
     ProjectResponse,
+    QuestionAnswerCreate,
     UploadedDocumentResponse,
 )
 from app.storage import FileTooLargeError, LocalFileStorage, PersistedFile, StagedUpload
@@ -87,6 +99,197 @@ async def create_project(
         ) from error
     await session.refresh(project)
     return project
+
+
+def _analysis_accepted(run: AnalysisRun) -> AnalysisRunAccepted:
+    return AnalysisRunAccepted(
+        run_id=run.id,
+        project_id=run.project_id,
+        status=run.status,
+        document_ids=[uuid.UUID(item) for item in run.input_document_ids],
+    )
+
+
+async def _queue_project_analysis(
+    session: AsyncSession, project_id: uuid.UUID
+) -> AnalysisRun:
+    documents = await _latest_project_documents(session, project_id)
+    if not documents:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Project has no documents to analyze",
+        )
+    run = AnalysisRun(
+        project_id=project_id,
+        status="queued",
+        current_step="queued",
+        input_document_ids=[str(document.id) for document in documents],
+        force_reextract=False,
+        question_policy="material_only",
+        errors=[],
+    )
+    session.add(run)
+    await session.flush()
+    return run
+
+
+async def _append_chat_message(
+    session: AsyncSession,
+    project: Project,
+    content: str,
+    *,
+    kind: str,
+) -> ChatMessage:
+    normalized = content.strip()
+    message = ChatMessage(
+        project_id=project.id,
+        role="user",
+        kind=kind,
+        content=normalized,
+    )
+    session.add(message)
+    await session.flush()
+
+    raw = normalized.encode("utf-8")
+    document_id = uuid.uuid4()
+    filename = "Ответ на вопросы.txt" if kind == "answer" else "Запрос пользователя.txt"
+    source_path = f"chat/{message.id}.txt"
+    document = Document(
+        id=document_id,
+        original_filename=filename,
+        source_path=source_path,
+        stored_filename=f"{document_id}.txt",
+        media_type="text/plain; charset=utf-8",
+        size_bytes=len(raw),
+        checksum_sha256=hashlib.sha256(raw).hexdigest(),
+        storage_uri=f"chat://{project.id}/{document_id}",
+        version=1,
+    )
+    session.add_all(
+        [
+            document,
+            ProjectDocument(project_id=project.id, document_id=document_id),
+            DocumentExtraction(
+                document_id=document_id,
+                status="ready",
+                extractor_version="chat-v1",
+                extracted_text=normalized,
+                tables=[],
+                errors=[],
+            ),
+        ]
+    )
+    project.updated_at = datetime.now(timezone.utc)
+    if project.name == "Новый чат" and kind == "query":
+        project.name = normalized[:80] + ("…" if len(normalized) > 80 else "")
+    await session.flush()
+    return message
+
+
+@router.post(
+    "/api/v1/chats",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["chats"],
+)
+async def create_chat(payload: ChatCreate, session: SessionDependency) -> Project:
+    project = Project(name=(payload.name or "Новый чат").strip() or "Новый чат")
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+@router.get("/api/v1/chats", response_model=list[ChatSummary], tags=["chats"])
+async def list_chats(session: SessionDependency) -> list[ChatSummary]:
+    projects = (
+        await session.scalars(select(Project).order_by(Project.updated_at.desc()))
+    ).all()
+    result: list[ChatSummary] = []
+    for project in projects:
+        last_message = await session.scalar(
+            select(ChatMessage)
+            .where(ChatMessage.project_id == project.id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        )
+        latest_run = await session.scalar(
+            select(AnalysisRun)
+            .where(AnalysisRun.project_id == project.id)
+            .order_by(AnalysisRun.created_at.desc())
+            .limit(1)
+        )
+        result.append(
+            ChatSummary(
+                id=project.id,
+                name=project.name,
+                last_message=last_message.content if last_message else None,
+                latest_status=latest_run.status if latest_run else None,
+                created_at=project.created_at,
+                updated_at=project.updated_at,
+            )
+        )
+    return result
+
+
+@router.get("/api/v1/chats/{chat_id}", response_model=ChatDetail, tags=["chats"])
+async def get_chat(chat_id: uuid.UUID, session: SessionDependency) -> ChatDetail:
+    project = await session.get(Project, chat_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    messages = (
+        await session.scalars(
+            select(ChatMessage)
+            .where(ChatMessage.project_id == chat_id)
+            .order_by(ChatMessage.created_at)
+        )
+    ).all()
+    run = await session.scalar(
+        select(AnalysisRun)
+        .where(AnalysisRun.project_id == chat_id)
+        .order_by(AnalysisRun.created_at.desc())
+        .limit(1)
+    )
+    latest_analysis = None
+    if run is not None:
+        analysis = await session.scalar(
+            select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
+        )
+        latest_analysis = _analysis_run_response(run, analysis)
+    return ChatDetail(
+        id=project.id,
+        name=project.name,
+        messages=[ChatMessageResponse.model_validate(message) for message in messages],
+        latest_analysis=latest_analysis,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+    )
+
+
+@router.post(
+    "/api/v1/chats/{chat_id}/messages",
+    response_model=ChatMessageAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["chats"],
+)
+async def send_chat_message(
+    chat_id: uuid.UUID,
+    payload: ChatMessageCreate,
+    session: SessionDependency,
+) -> ChatMessageAccepted:
+    project = await session.get(Project, chat_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    message = await _append_chat_message(
+        session, project, payload.content, kind="query"
+    )
+    run = await _queue_project_analysis(session, project.id)
+    await session.commit()
+    await session.refresh(message)
+    return ChatMessageAccepted(
+        message=ChatMessageResponse.model_validate(message),
+        analysis=_analysis_accepted(run),
+    )
 
 
 def _request_hash(project_id: uuid.UUID, staged_files: list[StagedUpload]) -> str:
@@ -414,32 +617,13 @@ async def start_project_analysis(
 ) -> AnalysisRunAccepted:
     if await session.get(Project, project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    documents = await _latest_project_documents(session, project_id)
-    if not documents:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Project has no documents to analyze",
-        )
-
     options = payload or AnalysisRunCreate()
-    run = AnalysisRun(
-        project_id=project_id,
-        status="queued",
-        current_step="queued",
-        input_document_ids=[str(document.id) for document in documents],
-        force_reextract=options.force_reextract,
-        question_policy=options.question_policy,
-        errors=[],
-    )
-    session.add(run)
+    run = await _queue_project_analysis(session, project_id)
+    run.force_reextract = options.force_reextract
+    run.question_policy = options.question_policy
     await session.commit()
     await session.refresh(run)
-    return AnalysisRunAccepted(
-        run_id=run.id,
-        project_id=run.project_id,
-        status=run.status,
-        document_ids=[uuid.UUID(item) for item in run.input_document_ids],
-    )
+    return _analysis_accepted(run)
 
 
 def _analysis_run_response(
@@ -522,3 +706,166 @@ async def get_latest_project_analysis(
         select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
     )
     return _analysis_run_response(run, result)
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/analysis-runs/{run_id}/answers",
+    response_model=ChatMessageAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["analysis"],
+)
+async def answer_analysis_questions(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    payload: QuestionAnswerCreate,
+    session: SessionDependency,
+) -> ChatMessageAccepted:
+    project = await session.get(Project, project_id)
+    run = await session.scalar(
+        select(AnalysisRun).where(
+            AnalysisRun.id == run_id,
+            AnalysisRun.project_id == project_id,
+        )
+    )
+    if project is None or run is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    if run.status != "requires_input":
+        raise HTTPException(
+            status_code=409,
+            detail="Answers are accepted only when analysis requires input",
+        )
+    message = await _append_chat_message(
+        session, project, payload.content, kind="answer"
+    )
+    next_run = await _queue_project_analysis(session, project_id)
+    await session.commit()
+    await session.refresh(message)
+    return ChatMessageAccepted(
+        message=ChatMessageResponse.model_validate(message),
+        analysis=_analysis_accepted(next_run),
+    )
+
+
+@router.post(
+    "/api/v1/projects/{project_id}/analysis-runs/{run_id}/questions/skip",
+    response_model=AnalysisRunResponse,
+    tags=["analysis"],
+)
+async def skip_analysis_questions(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session: SessionDependency,
+) -> AnalysisRunResponse:
+    run = await session.scalar(
+        select(AnalysisRun).where(
+            AnalysisRun.id == run_id,
+            AnalysisRun.project_id == project_id,
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Analysis run not found")
+    if run.status != "requires_input":
+        raise HTTPException(
+            status_code=409,
+            detail="Questions can be skipped only when analysis requires input",
+        )
+    result = await session.scalar(
+        select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
+    )
+    if result is None:
+        raise HTTPException(status_code=409, detail="Analysis result is not ready")
+    run.status = "ready"
+    run.current_step = "questions_skipped"
+    project = await session.get(Project, project_id)
+    if project is not None:
+        project.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(run)
+    return _analysis_run_response(run, result)
+
+
+def _pdf_lines(result: ProjectAnalysis) -> list[tuple[str, int]]:
+    lines: list[tuple[str, int]] = [
+        ("Результат анализа проекта", 20),
+        (f"Тип проекта: {result.project_type_code or 'не определён'}", 13),
+        (f"Уверенность: {result.confidence}", 11),
+        ("", 8),
+        ("Резюме", 15),
+        (result.summary, 10),
+        ("", 8),
+        ("Обоснование", 15),
+        (result.rationale, 10),
+    ]
+    sections = [
+        ("Факты", [f"{item.get('name')}: {item.get('value')}" for item in result.facts]),
+        ("Допущения", result.assumptions),
+        ("Проблемы", [item.get("description", "") for item in result.issues]),
+        ("Вопросы", [item.get("question", "") for item in result.questions]),
+        ("Предупреждения", result.warnings),
+    ]
+    for title, items in sections:
+        if not items:
+            continue
+        lines.extend([("", 8), (title, 15)])
+        lines.extend((f"• {item}", 10) for item in items)
+    return lines
+
+
+def _render_analysis_pdf(result: ProjectAnalysis) -> bytes:
+    try:
+        import pymupdf
+    except ImportError as error:  # pragma: no cover - installed in the Docker image
+        raise HTTPException(status_code=503, detail="PDF renderer is unavailable") from error
+
+    font_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    font_name = "dejavu" if font_path.exists() else "helv"
+    if font_path.exists():
+        page.insert_font(fontname=font_name, fontfile=str(font_path))
+    y = 48.0
+
+    for text, size in _pdf_lines(result):
+        wrapped = textwrap.wrap(str(text), width=max(45, int(95 * 10 / size))) or [""]
+        for line in wrapped:
+            if y > 800:
+                page = document.new_page(width=595, height=842)
+                if font_path.exists():
+                    page.insert_font(fontname=font_name, fontfile=str(font_path))
+                y = 48.0
+            page.insert_text((48, y), line, fontname=font_name, fontsize=size)
+            y += size * 1.45
+        y += 3
+    return document.tobytes(garbage=4, deflate=True)
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/analysis-runs/{run_id}/report.pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+    tags=["analysis"],
+)
+async def download_analysis_pdf(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session: SessionDependency,
+) -> Response:
+    run = await session.scalar(
+        select(AnalysisRun).where(
+            AnalysisRun.id == run_id,
+            AnalysisRun.project_id == project_id,
+            AnalysisRun.status.in_(["ready", "requires_input"]),
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Completed analysis run not found")
+    result = await session.scalar(
+        select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    return Response(
+        content=_render_analysis_pdf(result),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="project-analysis.pdf"'},
+    )

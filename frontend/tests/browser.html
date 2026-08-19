@@ -4,7 +4,7 @@
   <body>
     <pre id="results">RUNNING</pre>
     <script type="module">
-      import { buildUploadFormData, getLatestAnalysis } from "../api.js";
+      import { buildUploadFormData, getLatestAnalysis, sendChatMessage, answerAnalysisQuestions, skipAnalysisQuestions } from "../api.js";
       import { pollAnalysis } from "../polling.js";
 
       const checks = [];
@@ -65,6 +65,25 @@
         try {
           await getLatestAnalysis("http://localhost:8000", "project-id");
           check(requestedUrl.endsWith("/api/v1/projects/project-id/analyses/latest"), "неверный endpoint");
+        } finally {
+          window.fetch = originalFetch;
+        }
+      });
+
+      await test("Чат, ответы и пропуск используют заявленные endpoints", async () => {
+        const originalFetch = window.fetch;
+        const urls = [];
+        window.fetch = async (url) => {
+          urls.push(url);
+          return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
+        };
+        try {
+          await sendChatMessage("http://localhost:8000", "chat", "Запрос");
+          await answerAnalysisQuestions("http://localhost:8000", "chat", "run", "Ответ");
+          await skipAnalysisQuestions("http://localhost:8000", "chat", "run");
+          check(urls[0].endsWith("/api/v1/chats/chat/messages"), "неверный endpoint сообщения");
+          check(urls[1].endsWith("/analysis-runs/run/answers"), "неверный endpoint ответа");
+          check(urls[2].endsWith("/analysis-runs/run/questions/skip"), "неверный endpoint пропуска");
         } finally {
           window.fetch = originalFetch;
         }
