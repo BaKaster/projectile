@@ -34,6 +34,12 @@ class DataIssue(BaseModel):
     recommended_action: str | None = None
 
 
+class StageSignalEvidence(BaseModel):
+    code: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    source_document_ids: list[str] = Field(default_factory=list)
+
+
 class ModelAnalysis(BaseModel):
     project_type_code: str | None = None
     confidence: Confidence
@@ -44,6 +50,7 @@ class ModelAnalysis(BaseModel):
     issues: list[DataIssue] = Field(default_factory=list)
     gaps: list[DataGap] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    stage_signals: list[StageSignalEvidence] = Field(default_factory=list)
 
 
 class DocumentDigest(BaseModel):
