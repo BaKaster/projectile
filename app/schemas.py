@@ -12,7 +12,9 @@ from app.analysis_contracts import (
     DocumentDigest,
     ExtractedFact,
     MaterialQuestion,
+    StageSignalEvidence,
 )
+from app.stage_contracts import ProjectStagePlan, StagePlanContext
 
 
 class ProjectCreate(BaseModel):
@@ -81,11 +83,17 @@ class ProjectAnalysisResponse(BaseModel):
     gaps: list[DataGap]
     questions: list[MaterialQuestion]
     warnings: list[str]
+    stage_signals: list[StageSignalEvidence]
+    stage_plan: ProjectStagePlan | None = None
     document_digests: list[DocumentDigest]
     source_document_ids: list[uuid.UUID]
     model_name: str
     prompt_version: str
     created_at: datetime
+
+
+class StagePlanRequest(StagePlanContext):
+    pass
 
 
 class AnalysisRunResponse(BaseModel):

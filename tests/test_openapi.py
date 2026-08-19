@@ -34,3 +34,19 @@ def test_chat_and_question_endpoints_are_exposed() -> None:
         "/api/v1/projects/{project_id}/analysis-runs/{run_id}/report.pdf"
     ]["get"]
     assert "application/pdf" in pdf["responses"]["200"]["content"]
+
+
+def test_stage_plan_endpoint_has_typed_contract() -> None:
+    schema = app.openapi()
+    endpoint = schema["paths"][
+        "/api/v1/project-types/{project_type_code}/stage-plan"
+    ]["post"]
+    response = endpoint["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+
+    assert response["$ref"].endswith("/ProjectStagePlan")
+    stage_schema = schema["components"]["schemas"]["ResolvedStage"]
+    assert {"status", "exit_gate", "work_generation"} <= set(
+        stage_schema["properties"]
+    )

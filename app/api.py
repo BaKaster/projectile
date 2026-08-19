@@ -52,8 +52,11 @@ from app.schemas import (
     ProjectCreate,
     ProjectResponse,
     QuestionAnswerCreate,
+    StagePlanRequest,
     UploadedDocumentResponse,
 )
+from app.stage_contracts import ProjectStagePlan
+from app.stage_planner import StagePlanningError
 from app.storage import FileTooLargeError, LocalFileStorage, PersistedFile, StagedUpload
 
 SwaggerUploadFile = Annotated[
@@ -63,6 +66,23 @@ SwaggerUploadFile = Annotated[
 
 router = APIRouter()
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.post(
+    "/api/v1/project-types/{project_type_code}/stage-plan",
+    response_model=ProjectStagePlan,
+    tags=["stages"],
+)
+async def build_project_stage_plan(
+    project_type_code: str,
+    payload: StagePlanRequest,
+    request: Request,
+) -> ProjectStagePlan:
+    try:
+        return request.app.state.stage_planner.build_plan(project_type_code, payload)
+    except StagePlanningError as error:
+        status_code = 404 if str(error).startswith("unknown project type") else 422
+        raise HTTPException(status_code=status_code, detail=str(error)) from error
 
 
 @dataclass(slots=True)
@@ -643,6 +663,8 @@ def _analysis_run_response(
             "gaps": result.gaps,
             "questions": result.questions,
             "warnings": result.warnings,
+            "stage_signals": result.raw_result.get("stage_signals", []),
+            "stage_plan": result.raw_result.get("stage_plan"),
             "document_digests": result.document_digests,
             "source_document_ids": result.source_document_ids,
             "model_name": result.model_name,

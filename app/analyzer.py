@@ -32,6 +32,11 @@ SYSTEM_PROMPT = """Ты анализируешь ТЗ на русском язы
 8. Вопрос формулируй коротко, одним смыслом, и только когда ответ способен изменить оценку.
 9. Не более пяти действительно полезных вопросов. Не используй проценты: confidence —
    только low, medium или high.
+10. Верни stage_signals только при явном подтверждении в документах. Допустимые коды:
+    migration, pilot, data_transfer, hardware_delivery, software_delivery, procurement,
+    installation, training, decommissioning, recurring_service, incumbent_transition,
+    subcontractor, multi_site, security_approval, renewal. Для каждого сигнала укажи
+    краткое основание и document_id источников. Отсутствие сигнала не означает запрет этапа.
 """
 
 DIGEST_PROMPT = """Сделай компактный фактологический разбор каждого переданного документа.

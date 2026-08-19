@@ -28,15 +28,23 @@ from app.recognition import (
     UnsupportedFormatError,
     metadata_as_table,
 )
+from app.stage_contracts import StagePlanContext
+from app.stage_planner import StagePlanner
 from app.storage import LocalFileStorage
 
 logger = logging.getLogger(__name__)
 
 
 class AnalysisWorker:
-    def __init__(self, session_factory: async_sessionmaker, settings: Settings) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker,
+        settings: Settings,
+        stage_planner: StagePlanner,
+    ) -> None:
         self.session_factory = session_factory
         self.settings = settings
+        self.stage_planner = stage_planner
         self.storage = LocalFileStorage(
             settings.storage_root,
             settings.max_upload_size_bytes,
@@ -168,6 +176,35 @@ class AnalysisWorker:
         if warnings:
             result.warnings.extend(warnings)
         raw_result = result.model_dump(mode="json")
+        if result.project_type_code is not None:
+            allowed_signals = {
+                item.code for item in self.stage_planner.catalog.signal_catalog
+            }
+            stage_signals = sorted(
+                {
+                    item.code
+                    for item in result.stage_signals
+                    if item.code in allowed_signals
+                }
+            )
+            ignored_signals = sorted(
+                {
+                    item.code
+                    for item in result.stage_signals
+                    if item.code not in allowed_signals
+                }
+            )
+            if ignored_signals:
+                result.warnings.append(
+                    "Проигнорированы неизвестные сигналы этапов: "
+                    + ", ".join(ignored_signals)
+                )
+            stage_plan = self.stage_planner.build_plan(
+                result.project_type_code,
+                StagePlanContext(signals=stage_signals),
+            )
+            raw_result = result.model_dump(mode="json")
+            raw_result["stage_plan"] = stage_plan.model_dump(mode="json")
 
         async with self.session_factory.begin() as session:
             run = await session.get(AnalysisRun, run_id, with_for_update=True)
