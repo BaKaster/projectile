@@ -1,0 +1,41 @@
+@startuml
+!theme plain
+
+title Определение этапов и передача контракта генератору работ
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ArrowColor #475569
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam sequenceMessageAlign center
+
+actor "Пользователь /\nэксперт" as user
+participant "LLM-анализ\nдокументов" as llm #FDE68A
+participant "StagePlanner\nдетерминированные правила" as planner #DCFCE7
+database "project-types.json" as types #EDE9FE
+database "project-stage-\ntemplates.json" as stages #EDE9FE
+participant "Python-генератор\nработ" as works #DBEAFE
+participant "Pydantic-\nвалидация" as validation #E0F2FE
+
+llm -> llm : извлечь факты, тип и\nподтверждённые stage_signals
+llm -> planner : project_type_code + signals\n+ source_document_ids
+planner -> types : проверить тип и название
+types --> planner : профиль должен существовать
+planner -> stages : получить шаблон, профиль,\nactivation rules и gates
+stages --> planner : версионированные правила
+planner -> planner : selected / candidate\n+ объяснение выбора
+planner --> user : ProjectStagePlan + вопросы\nпо этапам-кандидатам
+
+alt эксперт уточнил применимость
+  user -> planner : include/exclude условных этапов
+  planner --> user : обновлённый ProjectStagePlan
+end
+
+planner -> works : только selected stages +\nwork_generation contract
+works -> works : декомпозиция по фактам,\nнормативам и драйверам
+works -> validation : GeneratedWorkPlan
+validation -> validation : stage_code существует и selected\n+все обязательные пакеты заполнены
+validation --> works : валидный план или\nструктурированные ошибки
+
+@enduml

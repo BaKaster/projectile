@@ -18,9 +18,33 @@ Backend для загрузки проектных документов, их п
 - идемпотентность запросов через `Idempotency-Key`;
 - PostgreSQL для проектов, метаданных документов, связей и запусков обработки;
 - локальное файловое хранилище для бинарников;
-- автоматическая загрузка 26 корпоративных типов проектов в `project_types`.
+- автоматическая загрузка 26 корпоративных типов проектов в `project_types`;
+- определение этапов по 26 профилям с gates и сигналами применимости;
+- адаптивное формирование работ по выбранным этапам, фактам и сигналам проекта.
 
 Бинарное содержимое намеренно не кладётся в PostgreSQL. В БД сохраняются метаданные и `storage_uri`, а сам файл находится в `storage/`, как предусмотрено архитектурой.
+
+## Этапы проектов
+
+Справочник различает аудит, консалтинг, внедрение/миграцию, поддержку, облачный сервис,
+поставку, аренду и комплексный проект. Условные этапы активируются подтверждёнными
+сигналами, а при нехватке сведений остаются кандидатами для проверки.
+
+```powershell
+python -m app.stages_cli validate
+python -m app.stages_cli plan SUP_IT_Implementation --signal migration --signal pilot
+```
+
+Production-каталог работ находится в `data/project-work-templates.json`. Он содержит уже
+извлечённые правила и во время работы не обращается к архиву проектов или внешним источникам.
+Обязательные работы наследуются от шаблона этапа, условные активируются подтверждёнными
+сигналами, а специализация типа проекта добавляет предметные операции. При анализе документов
+модель получает этот каталог как ориентир и отдельно извлекает явно требуемые уникальные
+работы проекта, которых нет в типовом составе. Поэтому JSON не является жёстким закрытым
+списком и не требует доступа к архиву примеров на production.
+
+Методика: [docs/project-stage-methodology.md](docs/project-stage-methodology.md).
+Контракт Python-генератора работ: [docs/work-generator-contract.md](docs/work-generator-contract.md).
 
 ## Запуск через Docker
 
@@ -47,6 +71,44 @@ docker compose down
 Данные PostgreSQL сохраняются в Docker volume `projectile_postgres_data`. Команда `docker compose down` их не удаляет.
 
 ## API
+
+### Формирование работ
+
+```http
+POST /api/v1/project-types/SUP_IT_Implementation/work-plan
+Content-Type: application/json
+
+{
+  "stage_context": {
+    "signals": ["migration"],
+    "include_candidates": false
+  },
+  "work_context": {
+    "signals": ["migration", "integration", "data_migration"],
+    "facts": [
+      {
+        "name": "Объём переносимых данных",
+        "value": "2 ТБ в трёх волнах",
+        "source_document_ids": ["document-id"]
+      }
+    ],
+    "project_specific_works": [
+      {
+        "stage_code": "solution_design",
+        "name": "Разработать адаптер для проприетарной шины заказчика",
+        "rationale": "Явное требование ТЗ вне типового состава",
+        "outputs": ["Спецификация и реализованный адаптер"],
+        "estimation_drivers": ["Количество типов сообщений"],
+        "source_document_ids": ["document-id"]
+      }
+    ]
+  }
+}
+```
+
+Ответ содержит пакеты работ только для выбранных этапов, причину включения каждой работы,
+релевантные факты проекта, проверяемые результаты и драйверы будущей оценки. Часы и роли на
+этом шаге не выдумываются: они остаются незаполненными до подтверждения объёмов.
 
 ### Чатовый сценарий
 
@@ -140,6 +202,8 @@ const response = await fetch(
 - `PROJECTILE_MAX_FILES_PER_REQUEST` — максимальное количество файлов, по умолчанию 1000;
 - `PROJECTILE_CORS_ORIGINS` — разрешённые frontend origins;
 - `PROJECTILE_STORAGE_ROOT` — каталог бинарных файлов;
+- `PROJECTILE_PROJECT_STAGE_TEMPLATES_PATH` — путь к каталогу этапов;
+- `PROJECTILE_PROJECT_WORK_TEMPLATES_PATH` — путь к production-каталогу работ;
 - `PROJECTILE_DATABASE_URL` — строка подключения SQLAlchemy/asyncpg.
 
 ## Таблицы PostgreSQL

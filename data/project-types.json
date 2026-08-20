@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0.0",
+  "stage_definitions_file": "data/project-stage-templates.json",
   "catalog": "MONS company project types",
   "language": "ru",
   "sources": [

@@ -5,6 +5,8 @@
 ![Компонентная схема](project-architecture.svg)
 
 Подробный обмен между компонентами показан на [схеме сценария](project-flow.svg).
+Контракт определения этапов и передачи их генератору работ показан на
+[схеме этапов](stage-planning-flow.svg).
 
 ## Архитектурные артефакты
 
@@ -12,6 +14,8 @@
 - `project-architecture.svg` и `project-architecture.png` — компонентная схема для документации.
 - `project-flow.puml` — исходник основного пользовательского сценария.
 - `project-flow.svg` и `project-flow.png` — отрисованный сценарий.
+- `stage-planning-flow.puml` — исходник определения этапов и работ.
+- `stage-planning-flow.svg` и `stage-planning-flow.png` — отрисованный сценарий этапов.
 - `project-architecture.drawio` — редактируемая компонентная схема для diagrams.net.
 
 PlantUML-файлы являются каноническими: при изменении архитектуры сначала обновляются они, затем изображения и версия draw.io.

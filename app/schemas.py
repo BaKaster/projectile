@@ -12,7 +12,10 @@ from app.analysis_contracts import (
     DocumentDigest,
     ExtractedFact,
     MaterialQuestion,
+    StageSignalEvidence,
 )
+from app.stage_contracts import ProjectStagePlan, StagePlanContext
+from app.work_contracts import GeneratedWorkPlan, WorkPlanContext
 
 
 class ProjectCreate(BaseModel):
@@ -81,11 +84,23 @@ class ProjectAnalysisResponse(BaseModel):
     gaps: list[DataGap]
     questions: list[MaterialQuestion]
     warnings: list[str]
+    stage_signals: list[StageSignalEvidence]
+    stage_plan: ProjectStagePlan | None = None
+    work_plan: GeneratedWorkPlan | None = None
     document_digests: list[DocumentDigest]
     source_document_ids: list[uuid.UUID]
     model_name: str
     prompt_version: str
     created_at: datetime
+
+
+class StagePlanRequest(StagePlanContext):
+    pass
+
+
+class WorkPlanRequest(BaseModel):
+    stage_context: StagePlanContext = Field(default_factory=StagePlanContext)
+    work_context: WorkPlanContext = Field(default_factory=WorkPlanContext)
 
 
 class AnalysisRunResponse(BaseModel):
