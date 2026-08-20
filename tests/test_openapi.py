@@ -50,3 +50,19 @@ def test_stage_plan_endpoint_has_typed_contract() -> None:
     assert {"status", "exit_gate", "work_generation"} <= set(
         stage_schema["properties"]
     )
+
+
+def test_work_plan_endpoint_has_typed_contract() -> None:
+    schema = app.openapi()
+    endpoint = schema["paths"][
+        "/api/v1/project-types/{project_type_code}/work-plan"
+    ]["post"]
+    response = endpoint["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+
+    assert response["$ref"].endswith("/GeneratedWorkPlan")
+    work_schema = schema["components"]["schemas"]["WorkItem"]
+    assert {"selection_reason", "outputs", "estimation_drivers"} <= set(
+        work_schema["properties"]
+    )

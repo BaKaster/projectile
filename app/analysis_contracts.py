@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.work_contracts import ProjectSpecificWork
+
 Confidence = Literal["low", "medium", "high"]
 GapImpact = Literal["low", "medium", "high", "critical"]
 
@@ -51,6 +53,7 @@ class ModelAnalysis(BaseModel):
     gaps: list[DataGap] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     stage_signals: list[StageSignalEvidence] = Field(default_factory=list)
+    project_specific_works: list[ProjectSpecificWork] = Field(default_factory=list)
 
 
 class DocumentDigest(BaseModel):

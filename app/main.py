@@ -12,6 +12,7 @@ from app.config import Settings
 from app.database import create_database, ensure_schema_compatibility
 from app.models import Base
 from app.stage_planner import StagePlanner
+from app.work_generator import WorkGenerator
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -28,6 +29,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             resolved_settings.project_stage_templates_path.resolve(),
         )
         app.state.stage_planner = stage_planner
+        work_generator = WorkGenerator.from_file(
+            resolved_settings.project_work_templates_path.resolve(), stage_planner
+        )
+        app.state.work_generator = work_generator
 
         if resolved_settings.auto_create_schema:
             async with engine.begin() as connection:
@@ -37,7 +42,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_factory, resolved_settings.project_types_path.resolve()
         )
 
-        worker = AnalysisWorker(session_factory, resolved_settings, stage_planner)
+        worker = AnalysisWorker(
+            session_factory, resolved_settings, stage_planner, work_generator
+        )
         app.state.analysis_worker = worker
         if resolved_settings.analysis_worker_enabled:
             await worker.recover_interrupted()

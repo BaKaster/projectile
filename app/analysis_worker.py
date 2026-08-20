@@ -31,6 +31,8 @@ from app.recognition import (
 from app.stage_contracts import StagePlanContext
 from app.stage_planner import StagePlanner
 from app.storage import LocalFileStorage
+from app.work_contracts import WorkFact, WorkPlanContext
+from app.work_generator import WorkGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +43,12 @@ class AnalysisWorker:
         session_factory: async_sessionmaker,
         settings: Settings,
         stage_planner: StagePlanner,
+        work_generator: WorkGenerator,
     ) -> None:
         self.session_factory = session_factory
         self.settings = settings
         self.stage_planner = stage_planner
+        self.work_generator = work_generator
         self.storage = LocalFileStorage(
             settings.storage_root,
             settings.max_upload_size_bytes,
@@ -162,8 +166,13 @@ class AnalysisWorker:
             model=self.settings.analysis_model,
             max_input_characters=self.settings.analysis_max_input_characters,
             digest_concurrency=self.settings.analysis_digest_concurrency,
+            signal_descriptions=self.work_generator.signal_descriptions(),
         )
-        analyzer_output = await analyzer.analyze(catalog_for_prompt(catalog_rows), sources)
+        analyzer_output = await analyzer.analyze(
+            catalog_for_prompt(catalog_rows),
+            sources,
+            work_catalog=self.work_generator.prompt_context(),
+        )
         result = analyzer_output.result
         allowed_codes = {row.code for row in catalog_rows}
         if result.project_type_code not in allowed_codes:
@@ -177,21 +186,21 @@ class AnalysisWorker:
             result.warnings.extend(warnings)
         raw_result = result.model_dump(mode="json")
         if result.project_type_code is not None:
-            allowed_signals = {
+            stage_signal_codes = {
                 item.code for item in self.stage_planner.catalog.signal_catalog
             }
-            stage_signals = sorted(
+            recognized_signals = sorted(
                 {
                     item.code
                     for item in result.stage_signals
-                    if item.code in allowed_signals
+                    if item.code in self.work_generator.signal_codes
                 }
             )
             ignored_signals = sorted(
                 {
                     item.code
                     for item in result.stage_signals
-                    if item.code not in allowed_signals
+                    if item.code not in self.work_generator.signal_codes
                 }
             )
             if ignored_signals:
@@ -201,10 +210,58 @@ class AnalysisWorker:
                 )
             stage_plan = self.stage_planner.build_plan(
                 result.project_type_code,
-                StagePlanContext(signals=stage_signals),
+                StagePlanContext(
+                    signals=[
+                        code for code in recognized_signals if code in stage_signal_codes
+                    ]
+                ),
+            )
+            selected_stage_codes = stage_plan.selected_stage_codes
+            source_document_ids = {source.document_id for source in sources}
+            project_specific_works = []
+            for work in result.project_specific_works:
+                if work.stage_code not in selected_stage_codes:
+                    result.warnings.append(
+                        "Проектно-специфичная работа проигнорирована: этап "
+                        f"{work.stage_code} не выбран для проекта ({work.name})."
+                    )
+                    continue
+                unknown_source_ids = set(work.source_document_ids) - source_document_ids
+                if unknown_source_ids:
+                    result.warnings.append(
+                        "У проектно-специфичной работы удалены неизвестные document_id: "
+                        + ", ".join(sorted(unknown_source_ids))
+                    )
+                    work.source_document_ids = [
+                        item
+                        for item in work.source_document_ids
+                        if item in source_document_ids
+                    ]
+                if not work.source_document_ids:
+                    result.warnings.append(
+                        "Проектно-специфичная работа проигнорирована без подтверждённого "
+                        f"document_id ({work.name})."
+                    )
+                    continue
+                project_specific_works.append(work)
+            work_plan = self.work_generator.generate(
+                stage_plan,
+                WorkPlanContext(
+                    signals=recognized_signals,
+                    facts=[
+                        WorkFact(
+                            name=fact.name,
+                            value=fact.value,
+                            source_document_ids=fact.source_document_ids,
+                        )
+                        for fact in result.facts
+                    ],
+                    project_specific_works=project_specific_works,
+                ),
             )
             raw_result = result.model_dump(mode="json")
             raw_result["stage_plan"] = stage_plan.model_dump(mode="json")
+            raw_result["work_plan"] = work_plan.model_dump(mode="json")
 
         async with self.session_factory.begin() as session:
             run = await session.get(AnalysisRun, run_id, with_for_update=True)
