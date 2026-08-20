@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     project_types_path: Path = Path("data/project-types.json")
     project_stage_templates_path: Path = Path("data/project-stage-templates.json")
     project_work_templates_path: Path = Path("data/project-work-templates.json")
+    role_effort_catalog_path: Path = Path("data/role-effort-catalog.json")
     max_upload_size_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
     max_files_per_request: int = Field(default=1000, gt=0, le=1000)
     upload_chunk_size_bytes: int = Field(default=1024 * 1024, gt=0)
