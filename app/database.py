@@ -50,6 +50,12 @@ async def ensure_schema_compatibility(engine) -> None:
                 "document_digests JSONB NOT NULL DEFAULT '[]'::jsonb"
             )
         )
+        await connection.execute(
+            text(
+                "ALTER TABLE project_analyses "
+                "ALTER COLUMN prompt_version TYPE VARCHAR(100)"
+            )
+        )
 
 
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
