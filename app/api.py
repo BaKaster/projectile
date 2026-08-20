@@ -254,7 +254,7 @@ def _analysis_accepted(run: AnalysisRun) -> AnalysisRunAccepted:
 
 
 async def _queue_project_analysis(
-    session: AsyncSession, project_id: uuid.UUID
+    session: AsyncSession, project_id: uuid.UUID, *, finalize_without_questions: bool = False
 ) -> AnalysisRun:
     documents = await _latest_project_documents(session, project_id)
     if not documents:
@@ -268,7 +268,7 @@ async def _queue_project_analysis(
         current_step="queued",
         input_document_ids=[str(document.id) for document in documents],
         force_reextract=False,
-        question_policy="material_only",
+        question_policy=("final_after_answers" if finalize_without_questions else "material_only"),
         errors=[],
     )
     session.add(run)
@@ -923,7 +923,11 @@ async def answer_analysis_questions(
     message = await _append_chat_message(
         session, project, payload.content, kind="answer"
     )
-    next_run = await _queue_project_analysis(session, project_id)
+    # The clarification loop is intentionally single-pass: the response is
+    # incorporated into a final estimate, never used to ask a second round.
+    next_run = await _queue_project_analysis(
+        session, project_id, finalize_without_questions=True
+    )
     await session.commit()
     await session.refresh(message)
     return ChatMessageAccepted(
@@ -1226,12 +1230,26 @@ def _analysis_estimate_payload(
     run: AnalysisRun,
     estimate_service: ExcelEstimateService | None = None,
 ) -> ExcelEstimateRequest:
-    if result.project_type_code is None:
-        raise ExcelEstimateError("analysis did not determine project_type_code")
+    project_type_code = result.project_type_code
+    if project_type_code is None:
+        # A final estimate is a delivery guarantee.  The neutral complex IT
+        # profile is deliberately conservative and the uncertainty is surfaced
+        # in the workbook instead of returning a dead-end HTTP error.
+        project_type_code = "SUP_Complex"
     stage_plan = result.raw_result.get("stage_plan")
     work_plan = result.raw_result.get("work_plan")
     if not isinstance(stage_plan, dict) or not isinstance(work_plan, dict):
-        raise ExcelEstimateError("analysis has no calculated stage_plan or work_plan")
+        stage_plan = {"stages": [{"code": "fallback", "name": "Предварительная оценка", "order": 1, "status": "selected"}]}
+        work_plan = {
+            "packages": [{"stage_code": "fallback", "works": [{
+                "work_code": "fallback.discovery",
+                "name": "Предварительный анализ и формирование оценки",
+                "role_code": "project_manager",
+                "effort_hours": 8,
+                "hours_basis": "Всего",
+                "selection_reason": "Резервный состав работ при неполных исходных данных",
+            }]}]
+        }
 
     stages = {
         item.get("code"): item
@@ -1274,9 +1292,7 @@ def _analysis_estimate_payload(
                     }
                 ]
             if not assignments:
-                raise ExcelEstimateError(
-                    f"calculated work has no role effort: {work.get('work_code', work_index)}"
-                )
+                assignments = [{"role": "project_manager", "estimated_hours": 8}]
             comment_parts = [work.get("selection_reason")]
             comment_parts.extend(work.get("assumptions") or [])
             work_items.append(
@@ -1295,7 +1311,73 @@ def _analysis_estimate_payload(
             )
 
     if not work_items:
-        raise ExcelEstimateError("analysis work_plan has no calculated works")
+        work_items = [{
+            "stage_no": 1,
+            "stage_name": "Предварительная оценка",
+            "work_no": "1.1",
+            "work_name": "Предварительный анализ и формирование оценки",
+            "role_assignments": [{"role": "project_manager", "estimated_hours": 8}],
+            "hours_basis": "Всего",
+            "comment": "Резервный состав работ: исходные данные не позволили разложить проект детальнее.",
+        }]
+
+    # The workbook has exactly 100 calculation rows.  Do not expose that
+    # implementation limit to the customer: retain total hours and fold the
+    # smallest auxiliary assignments into the primary role of the same work.
+    # The resulting loss of role granularity is explicitly disclosed as a risk.
+    compacted_assignments = 0
+    def expanded_row_count() -> int:
+        return sum(len(item["role_assignments"]) for item in work_items)
+
+    while expanded_row_count() > 100:
+        candidates = [
+            (assignment["estimated_hours"], work_index, assignment_index)
+            for work_index, item in enumerate(work_items)
+            if len(item["role_assignments"]) > 1
+            for assignment_index, assignment in enumerate(item["role_assignments"])
+        ]
+        if not candidates:
+            break
+        _hours, work_index, assignment_index = min(candidates)
+        assignments = work_items[work_index]["role_assignments"]
+        removed = assignments.pop(assignment_index)
+        target = max(assignments, key=lambda item: item["estimated_hours"])
+        target["estimated_hours"] += removed["estimated_hours"]
+        work_items[work_index]["comment"] = (
+            (work_items[work_index].get("comment") or "")
+            + f"; Трудозатраты роли {removed['role']} объединены с {target['role']} "
+            "из-за лимита строк Excel."
+        )[:2000]
+        compacted_assignments += 1
+
+    if expanded_row_count() > 100:
+        # This only applies to exceptional plans with more than 100 independent
+        # works.  Preserve the total in the same stage rather than failing the
+        # report download.
+        while expanded_row_count() > 100 and len(work_items) > 1:
+            source_index = min(
+                range(len(work_items)),
+                key=lambda index: sum(
+                    item["estimated_hours"]
+                    for item in work_items[index]["role_assignments"]
+                ),
+            )
+            source = work_items.pop(source_index)
+            target = next(
+                (item for item in work_items if item["stage_no"] == source["stage_no"]),
+                work_items[0],
+            )
+            target_assignment = max(
+                target["role_assignments"], key=lambda item: item["estimated_hours"]
+            )
+            target_assignment["estimated_hours"] += sum(
+                item["estimated_hours"] for item in source["role_assignments"]
+            )
+            target["comment"] = (
+                (target.get("comment") or "")
+                + f"; Включены трудозатраты укрупнённой работы: {source['work_name']}."
+            )[:2000]
+            compacted_assignments += len(source["role_assignments"])
 
     assumptions: list[dict] = []
     severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -1324,23 +1406,73 @@ def _analysis_estimate_payload(
         {"type": "Допущение", "text": item, "source": None, "impact": None}
         for item in result.assumptions
     )
+    assumptions.extend(
+        {"type": "Риск", "text": item, "source": None, "impact": "Требует проверки при согласовании оценки"}
+        for item in result.warnings
+    )
+    if compacted_assignments:
+        assumptions.insert(0, {
+            "type": "Риск",
+            "text": "Детализация ролей укрупнена для совместимости с лимитом строк Excel.",
+            "source": None,
+            "impact": "Общая трудоёмкость сохранена; распределение часов по вспомогательным ролям отражено в комментариях к работам.",
+        })
+    if result.project_type_code is None:
+        assumptions.insert(0, {
+            "type": "Риск",
+            "text": "Тип проекта не определён однозначно; для выпуска сметы применён консервативный профиль SUP_Complex.",
+            "source": None,
+            "impact": "Итоговая трудоёмкость и этапы требуют уточнения при появлении исходных данных.",
+        })
 
     confidence = {"low": 0.5, "medium": 0.75, "high": 0.9}[result.confidence]
     explicit_parameters = result.raw_result.get("type_parameters", [])
     type_parameters = (
         estimate_service.infer_type_parameters(
-            result.project_type_code,
+            project_type_code,
             result.facts,
             explicit_parameters,
         )
         if estimate_service is not None
         else explicit_parameters
     )
+    if estimate_service is not None:
+        occupied_slots = {
+            int(item["slot_number"])
+            for item in type_parameters
+            if item.get("slot_number") is not None
+        }
+        assumed_parameters: list[str] = []
+        safe_values = {
+            "TERM_MONTHS": 1,
+            "QTY": 1,
+            "COMPLEXITY": 1,
+            "PARALLEL_FTE": 1,
+            "LEAD_DAYS": 0,
+            "RISK_PCT": 0,
+            "MARKUP": 0,
+            "TARGET_MARGIN": 0,
+        }
+        for definition in estimate_service.parameter_definitions(project_type_code):
+            if not definition.required or definition.slot_number in occupied_slots:
+                continue
+            if definition.default_value not in (None, ""):
+                continue
+            value = safe_values.get(definition.influence_code, "Не указано")
+            type_parameters.append({"slot_number": definition.slot_number, "value": value})
+            assumed_parameters.append(definition.parameter_name)
+        if assumed_parameters:
+            assumptions.insert(0, {
+                "type": "Риск",
+                "text": "Неуказанные обязательные параметры заполнены нейтральными допущениями: " + ", ".join(assumed_parameters),
+                "source": None,
+                "impact": "Excel выпущен без блокировки; перед коммерческим согласованием значения необходимо подтвердить.",
+            })
     try:
         return ExcelEstimateRequest.model_validate(
             {
                 "project_name": project.name,
-                "project_type_code": result.project_type_code,
+                "project_type_code": project_type_code,
                 "estimate_date": result.created_at.date(),
                 "estimate_mode": (
                     "Уточнённая" if result.confidence == "high" else "Бюджетная"
@@ -1354,9 +1486,7 @@ def _analysis_estimate_payload(
                     f"analysis_run={run.id}; model={result.model_name}; "
                     f"prompt={result.prompt_version}"
                 ),
-                "main_assumption": (
-                    result.assumptions[0] if result.assumptions else None
-                ),
+                "main_assumption": (result.assumptions[0] if result.assumptions else (result.warnings[0] if result.warnings else None)),
                 "commercial_reserve_rate": 0,
                 "type_parameters": type_parameters,
                 "work_items": work_items,

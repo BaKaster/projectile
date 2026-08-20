@@ -175,6 +175,7 @@ class AnalysisWorker:
                 return
             run.status = "analyzing"
             run.current_step = "classifying_and_finding_gaps"
+            finalize_without_questions = run.question_policy == "final_after_answers"
             catalog_rows = (await session.scalars(select(ProjectType))).all()
 
         analyzer = OpenAIProjectAnalyzer(
@@ -183,6 +184,7 @@ class AnalysisWorker:
             max_input_characters=self.settings.analysis_max_input_characters,
             digest_concurrency=self.settings.analysis_digest_concurrency,
             signal_descriptions=self.work_generator.signal_descriptions(),
+            reasoning_effort=self.settings.analysis_reasoning_effort,
         )
         analyzer_output = await analyzer.analyze(
             catalog_for_prompt(catalog_rows),
@@ -197,7 +199,10 @@ class AnalysisWorker:
             result.warnings.append("Модель не смогла однозначно выбрать тип из каталога")
 
         questions = material_questions(result.gaps)
-        needs_input = any(question.blocking for question in questions)
+        needs_input = (
+            any(question.blocking for question in questions)
+            and not finalize_without_questions
+        )
         if warnings:
             result.warnings.extend(warnings)
         raw_result = result.model_dump(mode="json")
@@ -241,7 +246,7 @@ class AnalysisWorker:
                     "Проигнорированы неизвестные сигналы этапов: "
                     + ", ".join(ignored_signals)
                 )
-            stage_plan = self.stage_planner.build_plan(
+            baseline_stage_plan = self.stage_planner.build_plan(
                 result.project_type_code,
                 StagePlanContext(
                     signals=[
@@ -249,6 +254,41 @@ class AnalysisWorker:
                     ]
                 ),
             )
+            template_stage_codes = {item.code for item in baseline_stage_plan.stages}
+            ai_include_stages = sorted(
+                set(result.include_stage_codes) & template_stage_codes
+            )
+            ai_exclude_stages = sorted(
+                set(result.exclude_stage_codes) & template_stage_codes
+            )
+            unknown_stages = (
+                set(result.include_stage_codes) | set(result.exclude_stage_codes)
+            ) - template_stage_codes
+            if unknown_stages:
+                result.warnings.append(
+                    "ИИ предложил этапы вне каталога; они отмечены как риск и не "
+                    "добавлены в расчёт: " + ", ".join(sorted(unknown_stages))
+                )
+            try:
+                stage_plan = self.stage_planner.build_plan(
+                    result.project_type_code,
+                    StagePlanContext(
+                        signals=[
+                            code
+                            for code in recognized_signals
+                            if code in stage_signal_codes
+                        ],
+                        include_stage_codes=ai_include_stages,
+                        exclude_stage_codes=ai_exclude_stages,
+                    ),
+                )
+            except Exception as error:  # guardrails must not prevent delivery
+                logger.warning("AI stage selection rejected; using catalogue plan", exc_info=error)
+                result.warnings.append(
+                    "Выбор этапов ИИ не прошёл проверку каталога; применён "
+                    "безопасный базовый состав этапов."
+                )
+                stage_plan = baseline_stage_plan
             selected_stage_codes = stage_plan.selected_stage_codes
             source_document_ids = {source.document_id for source in sources}
             project_specific_works = []
@@ -277,9 +317,7 @@ class AnalysisWorker:
                     )
                     continue
                 project_specific_works.append(work)
-            work_plan = self.work_generator.generate(
-                stage_plan,
-                WorkPlanContext(
+            work_context = WorkPlanContext(
                     signals=recognized_signals,
                     facts=[
                         WorkFact(
@@ -290,14 +328,43 @@ class AnalysisWorker:
                         for fact in result.facts
                     ],
                     project_specific_works=project_specific_works,
-                ),
-            )
+                    include_work_codes=result.include_work_codes,
+                    exclude_work_codes=result.exclude_work_codes,
+                    scope_mode=result.scope_mode,
+                )
+            try:
+                work_plan = self.work_generator.generate(stage_plan, work_context)
+            except Exception as error:  # invalid AI scope must degrade, not fail a report
+                logger.warning("AI work selection rejected; using catalogue plan", exc_info=error)
+                result.warnings.append(
+                    "Выбор работ ИИ не прошёл проверку каталога; применён "
+                    "безопасный базовый состав работ."
+                )
+                # An AI can explicitly select an optional stage without also
+                # activating the catalogue signal that makes its conditional
+                # works applicable.  Revert both scope layers together.
+                stage_plan = baseline_stage_plan
+                fallback_custom_works = [
+                    item
+                    for item in project_specific_works
+                    if item.stage_code in stage_plan.selected_stage_codes
+                ]
+                work_plan = self.work_generator.generate(
+                    stage_plan,
+                    WorkPlanContext(
+                        signals=recognized_signals,
+                        facts=work_context.facts,
+                        project_specific_works=fallback_custom_works,
+                        scope_mode="baseline",
+                    ),
+                )
             if self.settings.analysis_ai_effort_refinement:
                 try:
                     work_plan = await self.effort_estimator.refine_with_ai(
                         work_plan,
                         api_key=self.settings.openai_api_key.get_secret_value(),
                         model=self.settings.analysis_model,
+                        reasoning_effort=self.settings.analysis_reasoning_effort,
                     )
                 except Exception as error:
                     logger.warning(

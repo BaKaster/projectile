@@ -54,6 +54,13 @@ class ModelAnalysis(BaseModel):
     gaps: list[DataGap] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     stage_signals: list[StageSignalEvidence] = Field(default_factory=list)
+    # The model proposes the scope; catalogues validate the proposal and provide
+    # a safe fallback when the model or API is unavailable.
+    include_stage_codes: list[str] = Field(default_factory=list)
+    exclude_stage_codes: list[str] = Field(default_factory=list)
+    include_work_codes: list[str] = Field(default_factory=list)
+    exclude_work_codes: list[str] = Field(default_factory=list)
+    scope_mode: Literal["baseline", "confirmed_only"] = "baseline"
     project_specific_works: list[ProjectSpecificWork] = Field(default_factory=list)
 
 

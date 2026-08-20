@@ -306,7 +306,6 @@ function renderAnalysis(run) {
   root.append(analysisSection("Факты", gridBlock(result.facts, (fact) => card(fact.name, fact.value))));
   root.append(analysisSection("Допущения", listBlock(result.assumptions)));
   root.append(analysisSection("Проблемы и риски", gridBlock(result.issues, (issue) => card(issue.description, issue.impact_on_estimate))));
-  root.append(analysisSection("Этапы, роли и трудозатраты", workPlanBlock(result.work_plan)));
   root.append(analysisSection("Вопросы", gridBlock(result.questions, (question) => card(question.question, question.reason, "question"))));
   root.append(analysisSection("Предупреждения", listBlock(result.warnings)));
   const footer = document.createElement("div"); footer.className = "analysis-footer";

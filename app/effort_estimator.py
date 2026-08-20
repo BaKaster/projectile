@@ -98,11 +98,13 @@ class AdaptiveEffortEstimator:
         *,
         api_key: str,
         model: str,
+        reasoning_effort: str = "high",
     ) -> GeneratedWorkPlan:
         baseline = self.estimate(plan)
         prompt = self._ai_prompt(baseline)
         response = await AsyncOpenAI(api_key=api_key).responses.parse(
             model=model,
+            reasoning={"effort": reasoning_effort},
             input=[
                 {
                     "role": "system",

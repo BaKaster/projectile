@@ -274,6 +274,8 @@ class WorkGenerator:
                 )
 
             for name in additions.get(stage.code, []):
+                if resolved_context.scope_mode == "confirmed_only":
+                    continue
                 work_code = self._special_work_code(stage.code, name)
                 if work_code in resolved_context.exclude_work_codes:
                     continue
@@ -320,8 +322,30 @@ class WorkGenerator:
             duplicate_semantic_codes.extend(removed_codes)
 
             if not works:
-                raise WorkGenerationError(
-                    f"selected stage has no applicable works: {stage.code}"
+                if resolved_context.scope_mode == "confirmed_only":
+                    # A narrow support estimate contains only proven operational
+                    # work, not a paid discovery row for each unused template stage.
+                    continue
+                # A selected optional stage can be valid even when the source
+                # does not identify which of its conditional tasks applies.
+                # Keep the estimate deliverable by adding a bounded discovery
+                # task and make the uncertainty visible in the workbook.
+                works.append(
+                    self._build_item(
+                        work_code=f"{stage.code}.scope_confirmation",
+                        name=f"Уточнить объём работ этапа «{stage.name}»",
+                        outputs=stage.deliverables,
+                        estimation_drivers=stage.work_generation.estimation_drivers,
+                        selection_reason=(
+                            "Этап выбран по документам, но конкретные условные "
+                            "работы не подтверждены; добавлена работа по уточнению scope."
+                        ),
+                        matched_signals=[],
+                        facts=resolved_context.facts,
+                        scope_dimensions=specialization.scope_dimensions,
+                        stage=stage,
+                        hours_basis=stage_template.hours_basis,
+                    )
                 )
             packages.append(StageWorkPackage(stage_code=stage.code, works=works))
 
@@ -352,7 +376,10 @@ class WorkGenerator:
             packages=packages,
             warnings=warnings,
         )
-        result.validate_against(stage_plan)
+        result.validate_against(
+            stage_plan,
+            require_all_selected_stages=resolved_context.scope_mode != "confirmed_only",
+        )
         return result
 
     def signal_descriptions(self) -> dict[str, str]:
@@ -374,7 +401,13 @@ class WorkGenerator:
                 template.template_code: [
                     {
                         "stage_code": stage.stage_code,
-                        "typical_work_names": [work.name for work in stage.works],
+                        "typical_works": [
+                            {
+                                "work_code": f"{stage.stage_code}.{work.code}",
+                                "name": work.name,
+                            }
+                            for work in stage.works
+                        ],
                     }
                     for stage in template.stages
                 ]
@@ -408,6 +441,8 @@ class WorkGenerator:
             return None
         if work_code in context.include_work_codes:
             return "Работа включена явным решением пользователя или эксперта."
+        if context.scope_mode == "confirmed_only":
+            return None
         if inclusion == "always":
             return "Типовая обязательная работа выбранного этапа."
         if matched_signals:
@@ -474,6 +509,12 @@ class WorkGenerator:
             matched_signals=matched_signals,
             context_facts=context_facts,
             hours_basis=hours_basis,
+        )
+        warnings.extend(
+            f"Этап {package.stage_code} содержит работу по уточнению scope: "
+            "условные работы не подтверждены исходными данными."
+            for package in packages
+            if any(work.work_code.endswith(".scope_confirmation") for work in package.works)
         )
 
     @classmethod

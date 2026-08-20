@@ -38,8 +38,9 @@ class Settings(BaseSettings):
             "KEY_OPENAI", "OPENAI_API_KEY", "PROJECTILE_OPENAI_API_KEY"
         ),
     )
-    analysis_model: str = "gpt-5.4-mini"
-    analysis_ai_effort_refinement: bool = False
+    analysis_model: str = "gpt-5.5"
+    analysis_reasoning_effort: str = "high"
+    analysis_ai_effort_refinement: bool = True
     analysis_max_input_characters: int = Field(default=300_000, gt=10_000)
     analysis_digest_concurrency: int = Field(default=2, gt=0, le=8)
     recognition_model: str = "small"

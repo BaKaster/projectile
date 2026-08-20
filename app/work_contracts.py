@@ -84,6 +84,7 @@ class WorkPlanContext(BaseModel):
     project_specific_works: list[ProjectSpecificWork] = Field(default_factory=list)
     include_work_codes: list[str] = Field(default_factory=list)
     exclude_work_codes: list[str] = Field(default_factory=list)
+    scope_mode: Literal["baseline", "confirmed_only"] = "baseline"
 
     @model_validator(mode="after")
     def validate_explicit_selection(self) -> WorkPlanContext:
