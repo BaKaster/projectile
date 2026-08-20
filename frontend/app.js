@@ -1,14 +1,16 @@
 import {
+  analysisExcelUrl,
   analysisReportUrl,
   answerAnalysisQuestions,
   createChat,
+  deleteChat,
   formatApiError,
   getAnalysisRun,
   getChat,
-  getHealth,
   listChats,
   sendChatMessage,
   skipAnalysisQuestions,
+  updateChat,
   uploadDocuments,
 } from "./api.js";
 import { ACTIVE_STATUSES, pollAnalysis, SUCCESS_STATUSES } from "./polling.js";
@@ -19,7 +21,7 @@ const $ = (selector) => document.querySelector(selector);
 const elements = {
   sidebar: $("#sidebar"), overlay: $("#sidebar-overlay"), history: $("#chat-history"),
   newChat: $("#new-chat"), openSidebar: $("#open-sidebar"), closeSidebar: $("#close-sidebar"),
-  title: $("#chat-title"), subtitle: $("#chat-subtitle"), statusDot: $("#status-dot"), apiLabel: $("#api-label"),
+  title: $("#chat-title"), subtitle: $("#chat-subtitle"),
   conversation: $("#conversation"), empty: $("#empty-state"),
   composer: $("#composer"), input: $("#message-input"), send: $("#send-button"),
   attach: $("#attach-button"), fileInput: $("#file-input"), pendingFiles: $("#pending-files"),
@@ -35,7 +37,7 @@ function setTheme(theme) {
   elements.themeToggle.setAttribute("aria-pressed", String(dark));
   elements.themeToggle.setAttribute("aria-label", dark ? "Включить светлую тему" : "Включить тёмную тему");
   elements.themeLabel.textContent = dark ? "Светлая тема" : "Тёмная тема";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#111111" : "#ffffff");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#121239");
   syncReportLinks();
 }
 
@@ -90,17 +92,6 @@ function resizeInput() {
   elements.input.style.height = `${Math.min(elements.input.scrollHeight, 160)}px`;
 }
 
-async function checkHealth() {
-  try {
-    const health = await getHealth(apiBase);
-    elements.statusDot.classList.toggle("offline", health.status !== "ok");
-    elements.apiLabel.textContent = health.status === "ok" ? "API подключён" : "Ошибка API";
-  } catch {
-    elements.statusDot.classList.add("offline");
-    elements.apiLabel.textContent = "API недоступен";
-  }
-}
-
 async function refreshHistory() {
   try {
     const chats = await listChats(apiBase);
@@ -113,20 +104,59 @@ async function refreshHistory() {
       return;
     }
     for (const chat of chats) {
+      const row = document.createElement("div");
+      row.className = `history-row${state.chat?.id === chat.id ? " active" : ""}`;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `history-item${state.chat?.id === chat.id ? " active" : ""}`;
+      button.className = "history-item";
       const title = document.createElement("strong");
       title.textContent = chat.name;
       const preview = document.createElement("small");
       preview.textContent = chat.last_message || statusLabel(chat.latest_status) || "Новый чат";
       button.append(title, preview);
       button.addEventListener("click", () => openChat(chat.id));
-      elements.history.append(button);
+      const actions = document.createElement("span"); actions.className = "history-actions";
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "history-action"; edit.setAttribute("aria-label", `Переименовать чат «${chat.name}»`);
+      edit.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16-.8 4.8L8 20l11-11-4-4L4 16ZM13.5 6.5l4 4"/></svg>';
+      edit.addEventListener("click", () => beginHistoryEdit(row, chat));
+      const remove = document.createElement("button"); remove.type = "button"; remove.className = "history-action delete"; remove.setAttribute("aria-label", `Удалить чат «${chat.name}»`);
+      remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg>';
+      remove.addEventListener("click", () => removeHistoryChat(chat));
+      actions.append(edit, remove); row.append(button, actions); elements.history.append(row);
     }
   } catch (error) {
     elements.history.innerHTML = '<p class="history-empty">Не удалось загрузить историю.</p>';
   }
+}
+
+function beginHistoryEdit(row, chat) {
+  const form = document.createElement("form"); form.className = "history-edit-form";
+  const input = document.createElement("input"); input.value = chat.name; input.maxLength = 300; input.setAttribute("aria-label", "Новое название чата");
+  const save = document.createElement("button"); save.type = "submit"; save.textContent = "✓"; save.setAttribute("aria-label", "Сохранить название");
+  const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "×"; cancel.setAttribute("aria-label", "Отменить переименование");
+  cancel.addEventListener("click", refreshHistory);
+  input.addEventListener("keydown", (event) => { if (event.key === "Escape") refreshHistory(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) { showToast("Название чата не может быть пустым."); input.focus(); return; }
+    input.disabled = true; save.disabled = true; cancel.disabled = true;
+    try {
+      const updated = await updateChat(apiBase, chat.id, name);
+      if (state.chat?.id === chat.id) { state.chat.name = updated.name; elements.title.textContent = updated.name; }
+      await refreshHistory();
+    } catch (error) { input.disabled = false; save.disabled = false; cancel.disabled = false; showToast(formatApiError(error)); }
+  });
+  form.append(input, save, cancel); row.replaceChildren(form); input.focus(); input.select();
+}
+
+async function removeHistoryChat(chat) {
+  if (!window.confirm(`Удалить чат «${chat.name}» и все результаты его анализа?`)) return;
+  try {
+    await deleteChat(apiBase, chat.id);
+    if (state.chat?.id === chat.id) newChat();
+    else await refreshHistory();
+  } catch (error) { showToast(formatApiError(error)); }
 }
 
 function statusLabel(status) {
@@ -246,8 +276,72 @@ function renderAnalysis(run) {
   download.dataset.reportRun = run.run_id;
   download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14"/></svg><span>Скачать этот анализ в PDF</span>';
   footer.append(identity, download); root.append(footer); syncReportLinks();
-  body.append(root);
+  body.append(root, renderExcelPanel(run));
   updateQuestionMode(); scrollToBottom(); refreshHistory();
+}
+
+function renderExcelPanel(run) {
+  const panel = document.createElement("section"); panel.className = "excel-panel";
+  const button = document.createElement("button"); button.type = "button"; button.className = "excel-button";
+  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7zM15 3v5h4M10 12l4 5m0-5-4 5"/></svg><span>Сформировать Excel файл</span>';
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", () => {
+    const questions = run.result?.questions?.filter((question) => question.blocking) || [];
+    if (run.status === "requires_input" && questions.length) {
+      const existing = panel.querySelector(".excel-questions");
+      if (existing) { existing.querySelector("textarea")?.focus(); return; }
+      button.setAttribute("aria-expanded", "true");
+      panel.append(buildExcelQuestions(run, questions, button));
+      panel.querySelector("textarea")?.focus();
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+    if (run.status !== "ready") {
+      showToast("Дождитесь завершения анализа перед формированием Excel.");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = analysisExcelUrl(apiBase, state.chat.id, run.run_id);
+    link.download = `projectile-analysis-${run.run_id}.xlsx`;
+    document.body.append(link); link.click(); link.remove();
+  });
+  panel.append(button);
+  return panel;
+}
+
+function buildExcelQuestions(run, questions, trigger) {
+  const form = document.createElement("form"); form.className = "excel-questions";
+  const title = document.createElement("h3"); title.textContent = "Нужна дополнительная информация";
+  const copy = document.createElement("p");
+  copy.textContent = "Заполните ответы на вопросы ниже. После уточнения анализ обновится, и Excel-файл можно будет сформировать повторным нажатием.";
+  const list = document.createElement("div"); list.className = "excel-question-list";
+  questions.forEach((question, index) => {
+    const field = document.createElement("div"); field.className = "excel-question";
+    const label = document.createElement("label"); label.htmlFor = `excel-answer-${index}`; label.textContent = question.question;
+    if (question.reason) { const reason = document.createElement("small"); reason.textContent = question.reason; label.append(reason); }
+    const input = document.createElement("textarea"); input.id = `excel-answer-${index}`; input.name = `answer-${index}`; input.required = true; input.placeholder = "Введите ответ…";
+    field.append(label, input); list.append(field);
+  });
+  const actions = document.createElement("div"); actions.className = "excel-question-actions";
+  const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "excel-cancel"; cancel.textContent = "Отмена";
+  const submit = document.createElement("button"); submit.type = "submit"; submit.className = "excel-submit"; submit.textContent = "Отправить ответы";
+  cancel.addEventListener("click", () => { trigger.setAttribute("aria-expanded", "false"); form.remove(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const answers = questions.map((question, index) => ({ question: question.question, answer: form.elements[`answer-${index}`].value.trim() }));
+    const missing = answers.findIndex((item) => !item.answer);
+    if (missing >= 0) { form.elements[`answer-${missing}`].focus(); showToast("Ответьте на все вопросы, чтобы обновить анализ."); return; }
+    const content = ["Ответы для формирования Excel:", ...answers.map((item, index) => `${index + 1}. ${item.question}\nОтвет: ${item.answer}`)].join("\n\n");
+    setBusy(true); submit.disabled = true; cancel.disabled = true;
+    try {
+      renderUserMessage(content, []);
+      const accepted = await answerAnalysisQuestions(apiBase, state.chat.id, run.run_id, content);
+      state.run = accepted.analysis; renderThinking(accepted.analysis); refreshHistory();
+      await beginPolling(accepted.analysis.run_id);
+    } catch (error) { setBusy(false); submit.disabled = false; cancel.disabled = false; showToast(formatApiError(error)); }
+  });
+  actions.append(cancel, submit); form.append(title, copy, list, actions);
+  return form;
 }
 
 function renderFailure(errors = []) {
@@ -350,7 +444,6 @@ elements.themeToggle.addEventListener("click", () => {
 elements.newChat.addEventListener("click", newChat); elements.skip.addEventListener("click", skipQuestions);
 elements.openSidebar.addEventListener("click", () => { elements.sidebar.classList.add("open"); elements.overlay.classList.add("open"); });
 elements.closeSidebar.addEventListener("click", closeSidebar); elements.overlay.addEventListener("click", closeSidebar);
-for (const suggestion of document.querySelectorAll("[data-prompt]")) suggestion.addEventListener("click", () => { elements.input.value = suggestion.dataset.prompt; resizeInput(); elements.input.focus(); });
 window.addEventListener("beforeunload", () => state.pollController?.abort());
 
-setTheme(initialTheme()); newChat(); checkHealth();
+setTheme(initialTheme()); newChat();

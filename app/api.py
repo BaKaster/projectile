@@ -5,6 +5,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -46,6 +47,7 @@ from app.schemas import (
     ChatMessageCreate,
     ChatMessageResponse,
     ChatSummary,
+    ChatUpdate,
     DocumentUploadResponse,
     HealthResponse,
     ProjectCreate,
@@ -263,6 +265,43 @@ async def get_chat(chat_id: uuid.UUID, session: SessionDependency) -> ChatDetail
         created_at=project.created_at,
         updated_at=project.updated_at,
     )
+
+
+@router.patch(
+    "/api/v1/chats/{chat_id}",
+    response_model=ProjectResponse,
+    tags=["chats"],
+)
+async def update_chat(
+    chat_id: uuid.UUID,
+    payload: ChatUpdate,
+    session: SessionDependency,
+) -> Project:
+    project = await session.get(Project, chat_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Chat name cannot be empty")
+    project.name = name
+    project.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(project)
+    return project
+
+
+@router.delete(
+    "/api/v1/chats/{chat_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["chats"],
+)
+async def delete_chat(chat_id: uuid.UUID, session: SessionDependency) -> Response:
+    project = await session.get(Project, chat_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    await session.delete(project)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -1028,6 +1067,159 @@ async def download_analysis_pdf(
         headers={
             "Content-Disposition": (
                 f'attachment; filename="projectile-analysis-{run.id}-{theme}.pdf"'
+            )
+        },
+    )
+
+
+def _render_analysis_xlsx(result: ProjectAnalysis, run_id: uuid.UUID) -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    workbook = Workbook()
+    navy = "121239"
+    red = "F9423A"
+    violet = "7949F4"
+    white = "FFFFFF"
+    soft = "F2F2F2"
+
+    def prepare(sheet: object, widths: tuple[int, ...]) -> None:
+        sheet.freeze_panes = "A2"
+        sheet.sheet_view.showGridLines = False
+        for index, width in enumerate(widths, 1):
+            sheet.column_dimensions[chr(64 + index)].width = width
+
+    def header(sheet: object, labels: list[str]) -> None:
+        sheet.append(labels)
+        for cell in sheet[1]:
+            cell.fill = PatternFill("solid", fgColor=navy)
+            cell.font = Font(name="Montserrat", color=white, bold=True)
+            cell.alignment = Alignment(vertical="center")
+        sheet.row_dimensions[1].height = 25
+
+    def format_body(sheet: object) -> None:
+        for row in sheet.iter_rows(min_row=2):
+            for cell in row:
+                cell.font = Font(name="Montserrat", size=10, color=navy)
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if row[0].row % 2 == 0:
+                for cell in row:
+                    cell.fill = PatternFill("solid", fgColor=soft)
+
+    summary = workbook.active
+    summary.title = "Результат"
+    prepare(summary, (25, 95))
+    header(summary, ["Параметр", "Значение"])
+    confidence = {"low": "Низкая", "medium": "Средняя", "high": "Высокая"}.get(result.confidence, result.confidence)
+    summary_rows = [
+        ("Команда", "MONSters"),
+        ("Идентификатор анализа", str(run_id)),
+        ("Тип проекта", result.project_type_code or "Не определён"),
+        ("Уверенность", confidence),
+        ("Резюме", result.summary),
+        ("Обоснование", result.rationale),
+        ("Дата формирования", datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")),
+    ]
+    for label, value in summary_rows:
+        summary.append([label, value])
+    for cell in summary[2]:
+        cell.fill = PatternFill("solid", fgColor=red)
+        cell.font = Font(name="Montserrat", color=white, bold=True)
+    format_body(summary)
+
+    facts = workbook.create_sheet("Факты")
+    prepare(facts, (35, 85))
+    header(facts, ["Факт", "Значение"])
+    for item in result.facts:
+        facts.append([item.get("name", ""), item.get("value", "")])
+    format_body(facts)
+
+    issues = workbook.create_sheet("Риски")
+    prepare(issues, (18, 55, 65, 55))
+    header(issues, ["Критичность", "Описание", "Влияние на оценку", "Рекомендация"])
+    for item in result.issues:
+        issues.append([
+            item.get("severity", ""), item.get("description", ""),
+            item.get("impact_on_estimate", ""), item.get("recommended_action", "") or "",
+        ])
+    format_body(issues)
+
+    notes = workbook.create_sheet("Допущения")
+    prepare(notes, (8, 120))
+    header(notes, ["№", "Допущение"])
+    for index, item in enumerate(result.assumptions, 1):
+        notes.append([index, item])
+    format_body(notes)
+
+    questions = workbook.create_sheet("Вопросы")
+    prepare(questions, (18, 65, 70, 15))
+    header(questions, ["Код", "Вопрос", "Причина", "Обязательный"])
+    for item in result.questions:
+        questions.append([
+            item.get("code", ""), item.get("question", ""), item.get("reason", ""),
+            "Да" if item.get("blocking") else "Нет",
+        ])
+    format_body(questions)
+
+    warnings = workbook.create_sheet("Предупреждения")
+    prepare(warnings, (8, 120))
+    header(warnings, ["№", "Предупреждение"])
+    for index, item in enumerate(result.warnings, 1):
+        warnings.append([index, item])
+    format_body(warnings)
+
+    for sheet in workbook.worksheets:
+        sheet.auto_filter.ref = sheet.dimensions
+        sheet.sheet_properties.pageSetUpPr.fitToPage = True
+        sheet.sheet_properties.tabColor = violet if sheet.title != "Результат" else red
+
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/analysis-runs/{run_id}/report.xlsx",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            }
+        }
+    },
+    tags=["analysis"],
+)
+async def download_analysis_xlsx(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session: SessionDependency,
+) -> Response:
+    run = await session.scalar(
+        select(AnalysisRun).where(
+            AnalysisRun.id == run_id,
+            AnalysisRun.project_id == project_id,
+            AnalysisRun.status == "ready",
+        )
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Answer the required questions before creating an Excel report",
+        )
+    result = await session.scalar(
+        select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    return Response(
+        content=_render_analysis_xlsx(result, run.id),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="projectile-analysis-{run.id}.xlsx"'
             )
         },
     )

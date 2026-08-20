@@ -104,6 +104,10 @@ class ChatCreate(BaseModel):
     name: str | None = Field(default=None, max_length=300)
 
 
+class ChatUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+
+
 class ChatMessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=50_000)
 

@@ -30,7 +30,7 @@ export function formatApiError(error) {
 
 async function request(apiBase, path, options = {}) {
   const response = await fetch(`${normalizeApiBase(apiBase)}${path}`, options);
-  if (response.ok) return response.json();
+  if (response.ok) return response.status === 204 ? null : response.json();
 
   let payload;
   try {
@@ -74,6 +74,18 @@ export function getChat(apiBase, chatId, signal) {
   return request(apiBase, `/api/v1/chats/${chatId}`, { signal });
 }
 
+export function updateChat(apiBase, chatId, name) {
+  return request(apiBase, `/api/v1/chats/${chatId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteChat(apiBase, chatId) {
+  return request(apiBase, `/api/v1/chats/${chatId}`, { method: "DELETE" });
+}
+
 export function sendChatMessage(apiBase, chatId, content) {
   return request(apiBase, `/api/v1/chats/${chatId}/messages`, {
     method: "POST",
@@ -99,6 +111,10 @@ export function skipAnalysisQuestions(apiBase, projectId, runId) {
 export function analysisReportUrl(apiBase, projectId, runId, theme = "light") {
   const reportTheme = theme === "dark" ? "dark" : "light";
   return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.pdf?theme=${reportTheme}`;
+}
+
+export function analysisExcelUrl(apiBase, projectId, runId) {
+  return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.xlsx`;
 }
 
 export function buildUploadFormData(files) {

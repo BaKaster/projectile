@@ -4,7 +4,7 @@
   <body>
     <pre id="results">RUNNING</pre>
     <script type="module">
-      import { buildUploadFormData, getLatestAnalysis, sendChatMessage, answerAnalysisQuestions, skipAnalysisQuestions } from "../api.js";
+      import { buildUploadFormData, deleteChat, getLatestAnalysis, sendChatMessage, answerAnalysisQuestions, skipAnalysisQuestions, updateChat } from "../api.js";
       import { pollAnalysis } from "../polling.js";
 
       const checks = [];
@@ -70,7 +70,7 @@
         }
       });
 
-      await test("Чат, ответы и пропуск используют заявленные endpoints", async () => {
+      await test("Чат, переименование, удаление, ответы и пропуск используют заявленные endpoints", async () => {
         const originalFetch = window.fetch;
         const urls = [];
         window.fetch = async (url) => {
@@ -78,12 +78,16 @@
           return new Response(JSON.stringify({ status: "ok" }), { status: 200 });
         };
         try {
+          await updateChat("http://localhost:8000", "chat", "Новое название");
           await sendChatMessage("http://localhost:8000", "chat", "Запрос");
           await answerAnalysisQuestions("http://localhost:8000", "chat", "run", "Ответ");
           await skipAnalysisQuestions("http://localhost:8000", "chat", "run");
-          check(urls[0].endsWith("/api/v1/chats/chat/messages"), "неверный endpoint сообщения");
-          check(urls[1].endsWith("/analysis-runs/run/answers"), "неверный endpoint ответа");
-          check(urls[2].endsWith("/analysis-runs/run/questions/skip"), "неверный endpoint пропуска");
+          await deleteChat("http://localhost:8000", "chat");
+          check(urls[0].endsWith("/api/v1/chats/chat"), "неверный endpoint переименования");
+          check(urls[1].endsWith("/api/v1/chats/chat/messages"), "неверный endpoint сообщения");
+          check(urls[2].endsWith("/analysis-runs/run/answers"), "неверный endpoint ответа");
+          check(urls[3].endsWith("/analysis-runs/run/questions/skip"), "неверный endpoint пропуска");
+          check(urls[4].endsWith("/api/v1/chats/chat"), "неверный endpoint удаления");
         } finally {
           window.fetch = originalFetch;
         }
