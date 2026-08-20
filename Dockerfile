@@ -14,6 +14,7 @@ RUN apt-get update \
         libarchive-tools \
         libgl1 \
         libglib2.0-0 \
+        libreoffice-calc \
         default-jre-headless \
         tesseract-ocr \
         tesseract-ocr-eng \
@@ -34,6 +35,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Application code changes no longer invalidate the heavyweight ML dependency layers.
 COPY app ./app
 COPY data ./data
+COPY ["Универсальный_расчет_стоимости_MONSters_v2_шаблон_для_разработчиков.xlsx", "/app/data/estimate-template.xlsx"]
 
 ENV HF_HOME=/home/appuser/.cache/huggingface
 

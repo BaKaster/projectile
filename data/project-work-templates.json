@@ -221,14 +221,14 @@
           {"code": "readiness_review", "name": "Проверить команду, расписание, доступы, инструменты, знания, контакты и эскалации", "inclusion": "always", "outputs": ["Readiness checklist", "Go-live решение"], "estimation_drivers": ["команды", "смены", "системы"], "evidence": "synthesized"},
           {"code": "announce_service", "name": "Запустить коммуникации пользователям и владельцам услуг", "inclusion": "always", "outputs": ["Памятка и уведомление о запуске"], "estimation_drivers": ["аудитории", "каналы"], "evidence": "company"}
         ]},
-        {"stage_code": "service_operation", "works": [
+        {"stage_code": "service_operation", "hours_basis": "В месяц", "works": [
           {"code": "handle_incidents_requests", "name": "Принимать, регистрировать, классифицировать, диагностировать, решать и маршрутизировать обращения", "inclusion": "always", "outputs": ["Обработанные обращения", "История решений"], "estimation_drivers": ["обращения/мес", "сложность", "доля решения по линиям", "режим"], "evidence": "company"},
           {"code": "perform_routine_operations", "name": "Выполнять регламентные проверки, обслуживание, обновления и администрирование", "inclusion": "always", "outputs": ["Журналы регламентных работ"], "estimation_drivers": ["КЕ", "регламенты", "частота"], "evidence": "company"},
           {"code": "monitor_and_restore", "name": "Мониторить состояние, реагировать на события и выполнять аварийное восстановление", "inclusion": "always", "outputs": ["События и восстановленные сервисы"], "estimation_drivers": ["метрики", "события", "SLA", "дежурства"], "evidence": "company"},
           {"code": "fulfill_changes", "name": "Анализировать, планировать, тестировать и внедрять запросы на изменения", "inclusion": "conditional", "signals": ["custom_development", "installation"], "outputs": ["Выполненные RFC"], "estimation_drivers": ["RFC", "сложность", "окна"], "evidence": "company"},
           {"code": "manage_vendor_cases", "name": "Регистрировать и сопровождать обращения к вендору", "inclusion": "conditional", "signals": ["vendor_support"], "outputs": ["Вендорские кейсы"], "estimation_drivers": ["кейсы", "вендоры"], "evidence": "company"}
         ]},
-        {"stage_code": "service_improvement", "works": [
+        {"stage_code": "service_improvement", "hours_basis": "В месяц", "works": [
           {"code": "report_service", "name": "Формировать операционную, SLA и управленческую отчётность", "inclusion": "always", "outputs": ["Еженедельные/ежемесячные отчёты"], "estimation_drivers": ["метрики", "аудитории", "частота"], "evidence": "company"},
           {"code": "review_service", "name": "Проводить сервисные встречи, разбирать нарушения и согласовывать улучшения", "inclusion": "always", "outputs": ["Протоколы service review", "План улучшений"], "estimation_drivers": ["встречи", "SLA-нарушения"], "evidence": "industry"},
           {"code": "improve_knowledge_automation", "name": "Развивать базу знаний, скрипты, автоматизацию и мониторинг", "inclusion": "always", "outputs": ["Обновлённые знания и автоматизации"], "estimation_drivers": ["повторные обращения", "кандидаты автоматизации"], "evidence": "synthesized"}
@@ -237,7 +237,7 @@
           {"code": "review_renewal", "name": "Пересмотреть объёмы, SLA, цены, риски и план следующего периода", "inclusion": "conditional", "signals": ["renewal"], "outputs": ["Предложение на продление"], "estimation_drivers": ["изменение объёмов", "SLA", "срок"], "evidence": "synthesized"},
           {"code": "exit_service", "name": "Передать знания, данные, доступы и открытые обращения при завершении", "inclusion": "conditional", "signals": ["renewal"], "outputs": ["Exit-план", "Акт передачи"], "estimation_drivers": ["системы", "открытые обращения", "получатели"], "evidence": "industry"}
         ]},
-        {"stage_code": "service_governance", "works": [
+        {"stage_code": "service_governance", "hours_basis": "В месяц", "works": [
           {"code": "manage_service", "name": "Управлять командой, мощностью, SLA, рисками, финансами, подрядчиками и эскалациями", "inclusion": "always", "outputs": ["Статусы", "Реестр рисков", "Capacity-план"], "estimation_drivers": ["длительность", "команды", "площадки", "поставщики", "ритм встреч"], "evidence": "company"}
         ]}
       ]
@@ -274,7 +274,7 @@
           {"code": "migrate_or_onboard_users", "name": "Перенести нагрузку или подключить пользователей и администраторов", "inclusion": "conditional", "signals": ["migration", "data_migration"], "outputs": ["Подключённая нагрузка/пользователи"], "estimation_drivers": ["пользователи", "данные", "волны"], "evidence": "synthesized"},
           {"code": "handover_cloud", "name": "Передать инструкции, доступы, контакты и правила потребления", "inclusion": "always", "outputs": ["Onboarding-пакет"], "estimation_drivers": ["роли", "документы"], "evidence": "company"}
         ]},
-        {"stage_code": "cloud_operation", "works": [
+        {"stage_code": "cloud_operation", "hours_basis": "В месяц", "works": [
           {"code": "operate_cloud", "name": "Оказывать эксплуатацию и поддержку, управлять инцидентами, изменениями и доступами", "inclusion": "always", "outputs": ["Операционные результаты"], "estimation_drivers": ["КЕ", "обращения", "режим"], "evidence": "company"},
           {"code": "monitor_capacity_cost", "name": "Контролировать доступность, ёмкость, потребление и стоимость", "inclusion": "always", "outputs": ["Отчёт по SLA/ёмкости/затратам"], "estimation_drivers": ["ресурсы", "метрики", "аккаунты"], "evidence": "synthesized"},
           {"code": "patch_and_improve", "name": "Выполнять обновления и согласованные улучшения платформы", "inclusion": "always", "outputs": ["Журнал изменений"], "estimation_drivers": ["компоненты", "релизы"], "evidence": "company"}
@@ -283,7 +283,7 @@
           {"code": "rightsize_and_renew", "name": "Пересмотреть sizing, тарифы, лицензии и продление", "inclusion": "conditional", "signals": ["renewal"], "outputs": ["План продления/масштабирования"], "estimation_drivers": ["потребление", "рост", "срок"], "evidence": "synthesized"},
           {"code": "exit_cloud", "name": "Экспортировать данные, отозвать доступы и удалить/передать ресурсы по правилам завершения", "inclusion": "conditional", "signals": ["decommissioning", "renewal"], "outputs": ["Exit-акт", "Подтверждение удаления/передачи"], "estimation_drivers": ["данные", "ресурсы", "аккаунты"], "evidence": "synthesized"}
         ]},
-        {"stage_code": "cloud_governance", "works": [
+        {"stage_code": "cloud_governance", "hours_basis": "В месяц", "works": [
           {"code": "manage_cloud_service", "name": "Управлять SLA, потреблением, бюджетами, рисками, провайдерами и изменениями", "inclusion": "always", "outputs": ["Статусы", "Реестр рисков", "Финансовый контроль"], "estimation_drivers": ["провайдеры", "аккаунты", "длительность"], "evidence": "synthesized"}
         ]}
       ]
@@ -345,7 +345,7 @@
           {"code": "install_leased_assets", "name": "Установить, подключить, настроить и проверить оборудование", "inclusion": "conditional", "signals": ["installation", "onsite_work"], "outputs": ["Акт ввода"], "estimation_drivers": ["единицы", "площадки"], "evidence": "synthesized"},
           {"code": "register_configuration", "name": "Зафиксировать серийные номера, конфигурацию, состояние и место эксплуатации", "inclusion": "always", "outputs": ["Карточки активов"], "estimation_drivers": ["единицы"], "evidence": "synthesized"}
         ]},
-        {"stage_code": "lease_operation", "works": [
+        {"stage_code": "lease_operation", "hours_basis": "В месяц", "works": [
           {"code": "bill_and_reconcile", "name": "Вести ежемесячный учёт, биллинг и сверку состава активов", "inclusion": "always", "outputs": ["Ежемесячный реестр и акт"], "estimation_drivers": ["единицы", "изменения", "период"], "evidence": "synthesized"},
           {"code": "maintain_replace", "name": "Обрабатывать неисправности, замены, перемещения и изменения конфигурации", "inclusion": "always", "outputs": ["Выполненные замены", "Актуальный реестр"], "estimation_drivers": ["инциденты", "SLA", "площадки"], "evidence": "synthesized"}
         ]},
@@ -353,7 +353,7 @@
           {"code": "decide_end_option", "name": "Согласовать возврат, продление, замену или выкуп", "inclusion": "always", "outputs": ["Решение по завершению"], "estimation_drivers": ["активы", "состояние", "остаточная стоимость"], "evidence": "synthesized"},
           {"code": "return_assets", "name": "Инвентаризировать, безопасно очистить данные, демонтировать и вернуть активы", "inclusion": "conditional", "signals": ["decommissioning"], "outputs": ["Акт возврата", "Подтверждение очистки"], "estimation_drivers": ["единицы", "площадки", "носители"], "evidence": "synthesized"}
         ]},
-        {"stage_code": "lease_governance", "works": [
+        {"stage_code": "lease_governance", "hours_basis": "В месяц", "works": [
           {"code": "manage_lease", "name": "Управлять активами, SLA, платежами, рисками, изменениями и продлением", "inclusion": "always", "outputs": ["Статусы", "Реестр активов и рисков"], "estimation_drivers": ["единицы", "площадки", "длительность"], "evidence": "synthesized"}
         ]}
       ]
@@ -399,7 +399,7 @@
           {"code": "run_end_to_end_acceptance", "name": "Проверить сквозные сценарии, производительность, отказоустойчивость и ИБ", "inclusion": "always", "outputs": ["Сквозной протокол приёмки"], "estimation_drivers": ["сценарии", "интеграции", "контуры"], "evidence": "synthesized"},
           {"code": "close_acceptance_gaps", "name": "Устранить межпотоковые дефекты и закрыть критерии результата", "inclusion": "always", "outputs": ["Закрытый реестр дефектов"], "estimation_drivers": ["дефекты", "команды"], "evidence": "synthesized"}
         ]},
-        {"stage_code": "complex_operation", "works": [
+        {"stage_code": "complex_operation", "hours_basis": "В месяц", "works": [
           {"code": "stabilize_integrated_service", "name": "Обеспечить гиперкар/стабилизацию и управление общими инцидентами", "inclusion": "always", "outputs": ["Отчёт стабилизации"], "estimation_drivers": ["сервисы", "инциденты", "период"], "evidence": "synthesized"},
           {"code": "operate_service_streams", "name": "Оказывать регулярные услуги по потокам и сквозное управление сервисом", "inclusion": "conditional", "signals": ["recurring_service"], "outputs": ["SLA-результаты", "Сервисная отчётность"], "estimation_drivers": ["потоки", "обращения", "КЕ", "режим"], "evidence": "company"}
         ]},

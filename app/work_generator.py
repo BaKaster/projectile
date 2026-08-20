@@ -17,6 +17,7 @@ from app.work_contracts import (
     WorkFact,
     WorkItem,
     WorkPlanContext,
+    HoursBasis,
 )
 
 
@@ -41,6 +42,7 @@ class WorkDefinition(BaseModel):
     outputs: list[str] = Field(min_length=1)
     estimation_drivers: list[str] = Field(default_factory=list)
     evidence: Literal["company", "industry", "synthesized"]
+    hours_basis: HoursBasis | None = None
 
     @model_validator(mode="after")
     def validate_activation(self) -> WorkDefinition:
@@ -53,6 +55,7 @@ class WorkDefinition(BaseModel):
 
 class StageWorkTemplate(BaseModel):
     stage_code: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    hours_basis: HoursBasis = "Всего"
     works: list[WorkDefinition] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -202,6 +205,7 @@ class WorkGenerator:
             )
 
         packages: list[StageWorkPackage] = []
+        duplicate_semantic_codes: list[str] = []
         selected_stages = [
             stage for stage in stage_plan.stages if stage.status == "selected"
         ]
@@ -259,6 +263,7 @@ class WorkGenerator:
                         facts=resolved_context.facts,
                         scope_dimensions=specialization.scope_dimensions,
                         stage=stage,
+                        hours_basis=definition.hours_basis or stage_template.hours_basis,
                     )
                 )
 
@@ -279,6 +284,7 @@ class WorkGenerator:
                         facts=resolved_context.facts,
                         scope_dimensions=specialization.scope_dimensions,
                         stage=stage,
+                        hours_basis=stage_template.hours_basis,
                     )
                 )
 
@@ -299,9 +305,13 @@ class WorkGenerator:
                         facts=resolved_context.facts,
                         scope_dimensions=specialization.scope_dimensions,
                         stage=stage,
+                        hours_basis=custom.hours_basis or stage_template.hours_basis,
                         extra_source_document_ids=custom.source_document_ids,
                     )
                 )
+
+            works, removed_codes = self._deduplicate_works(works)
+            duplicate_semantic_codes.extend(removed_codes)
 
             if not works:
                 raise WorkGenerationError(
@@ -323,6 +333,11 @@ class WorkGenerator:
             warnings.append(
                 "Повторные проектно-специфичные работы объединены: "
                 + ", ".join(sorted(set(duplicate_custom_codes)))
+            )
+        if duplicate_semantic_codes:
+            warnings.append(
+                "Семантически повторяющиеся работы этапа объединены: "
+                + ", ".join(sorted(set(duplicate_semantic_codes)))
             )
         result = GeneratedWorkPlan(
             project_type_code=stage_plan.project_type_code,
@@ -407,6 +422,7 @@ class WorkGenerator:
         facts: list[WorkFact],
         scope_dimensions: list[str],
         stage: ResolvedStage,
+        hours_basis: HoursBasis,
         extra_source_document_ids: list[str] | None = None,
     ) -> WorkItem:
         relevant = self._relevant_facts(
@@ -451,7 +467,43 @@ class WorkGenerator:
             selection_reason=selection_reason,
             matched_signals=matched_signals,
             context_facts=context_facts,
+            hours_basis=hours_basis,
         )
+
+    @classmethod
+    def _deduplicate_works(
+        cls, works: list[WorkItem]
+    ) -> tuple[list[WorkItem], list[str]]:
+        """Keep the first canonical work when generated sources describe the same task."""
+        kept: list[WorkItem] = []
+        removed: list[str] = []
+        for candidate in works:
+            candidate_tokens = cls._tokens(candidate.name)
+            duplicate = False
+            for existing in kept:
+                existing_tokens = cls._tokens(existing.name)
+                if not candidate_tokens or not existing_tokens:
+                    continue
+                intersection = len(candidate_tokens & existing_tokens)
+                union = len(candidate_tokens | existing_tokens)
+                shorter = min(len(candidate_tokens), len(existing_tokens))
+                if candidate_tokens == existing_tokens or (
+                    shorter >= 4
+                    and intersection / shorter >= 0.8
+                    and intersection / union >= 0.65
+                ):
+                    existing.source_document_ids = sorted(
+                        set(existing.source_document_ids) | set(candidate.source_document_ids)
+                    )
+                    existing.assumptions = list(
+                        dict.fromkeys([*existing.assumptions, *candidate.assumptions])
+                    )
+                    removed.append(candidate.work_code)
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append(candidate)
+        return kept, removed
 
     def _relevant_facts(
         self, facts: list[WorkFact], phrases: list[str]

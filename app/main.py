@@ -11,6 +11,7 @@ from app.catalog import seed_project_types
 from app.config import Settings
 from app.database import create_database, ensure_schema_compatibility
 from app.effort_estimator import AdaptiveEffortEstimator
+from app.excel_estimate import ExcelEstimateService
 from app.models import Base
 from app.stage_planner import StagePlanner
 from app.work_generator import WorkGenerator
@@ -38,6 +39,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             resolved_settings.role_effort_catalog_path.resolve()
         )
         app.state.effort_estimator = effort_estimator
+        app.state.excel_estimate_service = ExcelEstimateService(
+            resolved_settings.excel_estimate_template_path.resolve(),
+            role_catalog_path=resolved_settings.role_effort_catalog_path.resolve(),
+            recalculation_command=resolved_settings.excel_recalculation_command,
+            recalculation_timeout_seconds=(
+                resolved_settings.excel_recalculation_timeout_seconds
+            ),
+        )
 
         if resolved_settings.auto_create_schema:
             async with engine.begin() as connection:

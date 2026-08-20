@@ -30,6 +30,7 @@ class WorkProfile(BaseModel):
     review_role: str | None = None
     base_hours: float = Field(gt=0)
     review_share: float = Field(default=0, ge=0, lt=1)
+    directions: list[Literal["security", "support"]] = Field(default_factory=list)
 
 
 class EstimationCatalog(BaseModel):
@@ -78,7 +79,7 @@ class AdaptiveEffortEstimator:
         result = plan.model_copy(deep=True)
         for package in result.packages:
             for work in package.works:
-                self._estimate_work(work, package.stage_code)
+                self._estimate_work(work, package.stage_code, result.project_type_code)
         result.estimation_version = ESTIMATION_VERSION
         result.estimation_mode = "deterministic"
         self._set_totals(result)
@@ -126,8 +127,10 @@ class AdaptiveEffortEstimator:
         )
         return GeneratedWorkPlan.model_validate(baseline.model_dump())
 
-    def _estimate_work(self, work: WorkItem, stage_code: str) -> None:
-        profile = self._select_profile(work, stage_code)
+    def _estimate_work(
+        self, work: WorkItem, stage_code: str, project_type_code: str
+    ) -> None:
+        profile = self._select_profile(work, stage_code, project_type_code)
         multiplier = self._complexity_multiplier(work)
         total = self._round_hours(profile.base_hours * multiplier)
         review_hours = self._round_hours(total * profile.review_share) if profile.review_role else 0
@@ -163,11 +166,18 @@ class AdaptiveEffortEstimator:
         work.effort_min_hours = self._round_hours(total * (1 - uncertainty))
         work.effort_max_hours = self._round_hours(total * (1 + uncertainty))
 
-    def _select_profile(self, work: WorkItem, stage_code: str) -> WorkProfile:
+    def _select_profile(
+        self, work: WorkItem, stage_code: str, project_type_code: str
+    ) -> WorkProfile:
         haystack = " ".join(
             [work.work_code, stage_code, work.name, work.description, *work.outputs, *work.estimation_drivers]
         ).casefold()
-        profiles = self.catalog.profiles
+        direction = self._project_direction(project_type_code)
+        profiles = [
+            profile
+            for profile in self.catalog.profiles
+            if not profile.directions or direction in profile.directions
+        ]
         scored = [
             (sum(1 for keyword in profile.keywords if keyword.casefold() in haystack), -index, profile)
             for index, profile in enumerate(profiles)
@@ -217,10 +227,13 @@ class AdaptiveEffortEstimator:
         )
 
     def _ai_prompt(self, plan: GeneratedWorkPlan) -> str:
+        allowed_role_codes = self._allowed_role_codes(plan.project_type_code)
         data = {
             "project_type_code": plan.project_type_code,
             "allowed_roles": [
-                {"role_code": role.code, "role_name": role.name} for role in self.catalog.roles
+                {"role_code": role.code, "role_name": role.name}
+                for role in self.catalog.roles
+                if role.code in allowed_role_codes
             ],
             "works": [
                 {
@@ -255,8 +268,15 @@ class AdaptiveEffortEstimator:
                 estimate = estimates.get(work.work_code)
                 if estimate is None:
                     continue
-                if any(item.role_code not in self.roles for item in estimate.assignments):
-                    raise ValueError(f"AI returned an unknown role for {work.work_code}")
+                allowed_role_codes = self._allowed_role_codes(plan.project_type_code)
+                if any(
+                    item.role_code not in self.roles
+                    or item.role_code not in allowed_role_codes
+                    for item in estimate.assignments
+                ):
+                    raise ValueError(
+                        f"AI returned a role outside the project direction for {work.work_code}"
+                    )
                 assignments = [
                     self._assignment(
                         item.role_code,
@@ -278,6 +298,19 @@ class AdaptiveEffortEstimator:
     @staticmethod
     def _round_hours(value: float) -> float:
         return max(0.5, round(value * 2) / 2)
+
+    @staticmethod
+    def _project_direction(project_type_code: str) -> Literal["security", "support"]:
+        return "security" if project_type_code.startswith("SEC_") else "support"
+
+    def _allowed_role_codes(self, project_type_code: str) -> set[str]:
+        if self._project_direction(project_type_code) == "security":
+            return set(self.roles)
+        return {
+            code
+            for code in self.roles
+            if code != "pentester" and not code.startswith("security_")
+        }
 
     @staticmethod
     def _set_totals(plan: GeneratedWorkPlan) -> None:

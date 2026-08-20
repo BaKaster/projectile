@@ -93,3 +93,19 @@ def test_security_work_uses_security_catalog_role() -> None:
     assert work.role_code == "pentester"
     assert work.role_assignments[0].sale_rate_rub_per_hour == 5500
     assert work.role_assignments[0].cost_rate_rub_per_hour == 5200
+
+
+def test_support_projects_cannot_receive_security_roles() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan(
+        "SUP_L1", StagePlanContext(include_candidates=False)
+    )
+    plan = estimator.estimate(generator.generate(stage_plan))
+    assigned = {
+        assignment.role_code
+        for package in plan.packages
+        for work in package.works
+        for assignment in work.role_assignments
+    }
+    assert "pentester" not in assigned
+    assert not any(code.startswith("security_") for code in assigned)

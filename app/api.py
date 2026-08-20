@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -27,6 +28,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.excel_estimate import (
+    ExcelEstimateError,
+    ExcelEstimateRequest,
+    TypeParameterDefinition,
+)
 from app.models import (
     AnalysisRun,
     ChatMessage,
@@ -133,6 +139,62 @@ async def build_project_work_plan(
         raise HTTPException(status_code=status_code, detail=str(error)) from error
     except WorkGenerationError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@router.get(
+    "/api/v1/project-types/{project_type_code}/estimate-parameters",
+    response_model=list[TypeParameterDefinition],
+    tags=["estimates"],
+)
+async def get_estimate_parameters(
+    project_type_code: str,
+    request: Request,
+) -> list[TypeParameterDefinition]:
+    try:
+        return request.app.state.excel_estimate_service.parameter_definitions(
+            project_type_code
+        )
+    except ExcelEstimateError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post(
+    "/api/v1/estimates/workbook",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            },
+            "description": "A populated MONSters estimate workbook",
+        }
+    },
+    tags=["estimates"],
+)
+async def build_estimate_workbook(
+    payload: ExcelEstimateRequest,
+    request: Request,
+) -> Response:
+    try:
+        service = request.app.state.excel_estimate_service
+        content = service.build(payload)
+    except ExcelEstimateError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", payload.project_name).strip("-_")
+    ascii_name = f"{safe_name or 'estimate'}.xlsx"
+    unicode_name = quote(f"{payload.project_name}.xlsx")
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
+            ),
+            "X-Excel-Recalculation": service.recalculation_status,
+        },
+    )
 
 
 @dataclass(slots=True)
@@ -1144,110 +1206,152 @@ async def download_analysis_pdf(
     )
 
 
-def _render_analysis_xlsx(result: ProjectAnalysis, run_id: uuid.UUID) -> bytes:
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
+def _analysis_estimate_payload(
+    project: Project,
+    result: ProjectAnalysis,
+    run: AnalysisRun,
+    estimate_service: ExcelEstimateService | None = None,
+) -> ExcelEstimateRequest:
+    if result.project_type_code is None:
+        raise ExcelEstimateError("analysis did not determine project_type_code")
+    stage_plan = result.raw_result.get("stage_plan")
+    work_plan = result.raw_result.get("work_plan")
+    if not isinstance(stage_plan, dict) or not isinstance(work_plan, dict):
+        raise ExcelEstimateError("analysis has no calculated stage_plan or work_plan")
 
-    workbook = Workbook()
-    navy = "121239"
-    red = "F9423A"
-    violet = "7949F4"
-    white = "FFFFFF"
-    soft = "F2F2F2"
+    stages = {
+        item.get("code"): item
+        for item in stage_plan.get("stages", [])
+        if isinstance(item, dict) and item.get("status") == "selected"
+    }
+    stage_numbers = {
+        item["code"]: index
+        for index, item in enumerate(
+            sorted(stages.values(), key=lambda value: value.get("order", 999)), 1
+        )
+    }
+    work_items = []
+    for package in work_plan.get("packages", []):
+        if not isinstance(package, dict):
+            continue
+        stage_code = package.get("stage_code")
+        stage = stages.get(stage_code, {})
+        stage_no = stage_numbers.get(stage_code, len(stage_numbers) + 1)
+        stage_name = stage.get("name") or stage_code or f"Этап {stage_no}"
+        for work_index, work in enumerate(package.get("works", []), 1):
+            if not isinstance(work, dict):
+                continue
+            assignments = [
+                {
+                    "role": assignment.get("role_code"),
+                    "estimated_hours": assignment.get("effort_hours"),
+                    "responsibility": assignment.get("responsibility"),
+                }
+                for assignment in work.get("role_assignments", [])
+                if isinstance(assignment, dict)
+                and assignment.get("role_code")
+                and assignment.get("effort_hours")
+            ]
+            if not assignments and work.get("role_code") and work.get("effort_hours"):
+                assignments = [
+                    {
+                        "role": work["role_code"],
+                        "estimated_hours": work["effort_hours"],
+                    }
+                ]
+            if not assignments:
+                raise ExcelEstimateError(
+                    f"calculated work has no role effort: {work.get('work_code', work_index)}"
+                )
+            comment_parts = [work.get("selection_reason")]
+            comment_parts.extend(work.get("assumptions") or [])
+            work_items.append(
+                {
+                    "stage_no": stage_no,
+                    "stage_name": stage_name,
+                    "work_no": f"{stage_no}.{work_index}",
+                    "work_name": work.get("name") or work.get("work_code"),
+                    "role_assignments": assignments,
+                    "hours_basis": work.get("hours_basis") or "Всего",
+                    "comment": "; ".join(
+                        str(item).strip() for item in comment_parts if item
+                    )[:2000]
+                    or None,
+                }
+            )
 
-    def prepare(sheet: object, widths: tuple[int, ...]) -> None:
-        sheet.freeze_panes = "A2"
-        sheet.sheet_view.showGridLines = False
-        for index, width in enumerate(widths, 1):
-            sheet.column_dimensions[chr(64 + index)].width = width
+    if not work_items:
+        raise ExcelEstimateError("analysis work_plan has no calculated works")
 
-    def header(sheet: object, labels: list[str]) -> None:
-        sheet.append(labels)
-        for cell in sheet[1]:
-            cell.fill = PatternFill("solid", fgColor=navy)
-            cell.font = Font(name="Montserrat", color=white, bold=True)
-            cell.alignment = Alignment(vertical="center")
-        sheet.row_dimensions[1].height = 25
+    assumptions: list[dict] = []
+    severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    for issue in sorted(
+        result.issues,
+        key=lambda item: severity_rank.get(item.get("severity", "low"), 3),
+    ):
+        assumptions.append(
+            {
+                "type": "Риск",
+                "text": issue.get("description") or issue.get("code"),
+                "source": ", ".join(issue.get("source_document_ids") or []) or None,
+                "impact": issue.get("impact_on_estimate"),
+            }
+        )
+    for gap in result.gaps:
+        assumptions.append(
+            {
+                "type": "Открытый вопрос",
+                "text": gap.get("question") or gap.get("description") or gap.get("code"),
+                "source": None,
+                "impact": gap.get("suggested_assumption") or gap.get("impact"),
+            }
+        )
+    assumptions.extend(
+        {"type": "Допущение", "text": item, "source": None, "impact": None}
+        for item in result.assumptions
+    )
 
-    def format_body(sheet: object) -> None:
-        for row in sheet.iter_rows(min_row=2):
-            for cell in row:
-                cell.font = Font(name="Montserrat", size=10, color=navy)
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-            if row[0].row % 2 == 0:
-                for cell in row:
-                    cell.fill = PatternFill("solid", fgColor=soft)
-
-    summary = workbook.active
-    summary.title = "Результат"
-    prepare(summary, (25, 95))
-    header(summary, ["Параметр", "Значение"])
-    confidence = {"low": "Низкая", "medium": "Средняя", "high": "Высокая"}.get(result.confidence, result.confidence)
-    summary_rows = [
-        ("Команда", "MONSters"),
-        ("Идентификатор анализа", str(run_id)),
-        ("Тип проекта", result.project_type_code or "Не определён"),
-        ("Уверенность", confidence),
-        ("Резюме", result.summary),
-        ("Обоснование", result.rationale),
-        ("Дата формирования", datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")),
-    ]
-    for label, value in summary_rows:
-        summary.append([label, value])
-    for cell in summary[2]:
-        cell.fill = PatternFill("solid", fgColor=red)
-        cell.font = Font(name="Montserrat", color=white, bold=True)
-    format_body(summary)
-
-    facts = workbook.create_sheet("Факты")
-    prepare(facts, (35, 85))
-    header(facts, ["Факт", "Значение"])
-    for item in result.facts:
-        facts.append([item.get("name", ""), item.get("value", "")])
-    format_body(facts)
-
-    issues = workbook.create_sheet("Риски")
-    prepare(issues, (18, 55, 65, 55))
-    header(issues, ["Критичность", "Описание", "Влияние на оценку", "Рекомендация"])
-    for item in result.issues:
-        issues.append([
-            item.get("severity", ""), item.get("description", ""),
-            item.get("impact_on_estimate", ""), item.get("recommended_action", "") or "",
-        ])
-    format_body(issues)
-
-    notes = workbook.create_sheet("Допущения")
-    prepare(notes, (8, 120))
-    header(notes, ["№", "Допущение"])
-    for index, item in enumerate(result.assumptions, 1):
-        notes.append([index, item])
-    format_body(notes)
-
-    questions = workbook.create_sheet("Вопросы")
-    prepare(questions, (18, 65, 70, 15))
-    header(questions, ["Код", "Вопрос", "Причина", "Обязательный"])
-    for item in result.questions:
-        questions.append([
-            item.get("code", ""), item.get("question", ""), item.get("reason", ""),
-            "Да" if item.get("blocking") else "Нет",
-        ])
-    format_body(questions)
-
-    warnings = workbook.create_sheet("Предупреждения")
-    prepare(warnings, (8, 120))
-    header(warnings, ["№", "Предупреждение"])
-    for index, item in enumerate(result.warnings, 1):
-        warnings.append([index, item])
-    format_body(warnings)
-
-    for sheet in workbook.worksheets:
-        sheet.auto_filter.ref = sheet.dimensions
-        sheet.sheet_properties.pageSetUpPr.fitToPage = True
-        sheet.sheet_properties.tabColor = violet if sheet.title != "Результат" else red
-
-    stream = BytesIO()
-    workbook.save(stream)
-    return stream.getvalue()
+    confidence = {"low": 0.5, "medium": 0.75, "high": 0.9}[result.confidence]
+    explicit_parameters = result.raw_result.get("type_parameters", [])
+    type_parameters = (
+        estimate_service.infer_type_parameters(
+            result.project_type_code,
+            result.facts,
+            explicit_parameters,
+        )
+        if estimate_service is not None
+        else explicit_parameters
+    )
+    try:
+        return ExcelEstimateRequest.model_validate(
+            {
+                "project_name": project.name,
+                "project_type_code": result.project_type_code,
+                "estimate_date": result.created_at.date(),
+                "estimate_mode": (
+                    "Уточнённая" if result.confidence == "high" else "Бюджетная"
+                ),
+                "confidence": confidence,
+                "vat_rate": 0.2,
+                "discount_rate": 0,
+                "work_hours_per_day": 8,
+                "default_hours_basis": "Всего",
+                "source_or_spec_version": (
+                    f"analysis_run={run.id}; model={result.model_name}; "
+                    f"prompt={result.prompt_version}"
+                ),
+                "main_assumption": (
+                    result.assumptions[0] if result.assumptions else None
+                ),
+                "commercial_reserve_rate": 0,
+                "type_parameters": type_parameters,
+                "work_items": work_items,
+                "external_costs": result.raw_result.get("external_costs", []),
+                "assumptions": assumptions[:4],
+            }
+        )
+    except ValueError as error:
+        raise ExcelEstimateError(f"analysis cannot populate Excel template: {error}") from error
 
 
 @router.get(
@@ -1266,6 +1370,7 @@ async def download_analysis_xlsx(
     project_id: uuid.UUID,
     run_id: uuid.UUID,
     session: SessionDependency,
+    request: Request,
 ) -> Response:
     run = await session.scalar(
         select(AnalysisRun).where(
@@ -1284,14 +1389,27 @@ async def download_analysis_xlsx(
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Analysis result not found")
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        service = request.app.state.excel_estimate_service
+        payload = _analysis_estimate_payload(project, result, run, service)
+        content = service.build(payload)
+    except ExcelEstimateError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", project.name).strip("-_")
+    ascii_name = f"{safe_name or 'estimate'}.xlsx"
+    unicode_name = quote(f"{project.name}.xlsx")
     return Response(
-        content=_render_analysis_xlsx(result, run.id),
+        content=content,
         media_type=(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
         headers={
             "Content-Disposition": (
-                f'attachment; filename="projectile-analysis-{run.id}.xlsx"'
-            )
+                f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
+            ),
+            "X-Excel-Recalculation": service.recalculation_status,
         },
     )

@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.stage_contracts import ProjectStagePlan
 
+HoursBasis = Literal["Всего", "В месяц", "На единицу", "Ед. × месяц"]
+
 
 class RoleAssignment(BaseModel):
     role_code: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
@@ -37,6 +39,7 @@ class WorkItem(BaseModel):
     role_assignments: list[RoleAssignment] = Field(default_factory=list)
     effort_min_hours: float | None = Field(default=None, ge=0)
     effort_max_hours: float | None = Field(default=None, ge=0)
+    hours_basis: HoursBasis = "Всего"
 
     @model_validator(mode="after")
     def validate_estimate_pair(self) -> WorkItem:
@@ -72,6 +75,7 @@ class ProjectSpecificWork(BaseModel):
     outputs: list[str] = Field(min_length=1)
     estimation_drivers: list[str] = Field(default_factory=list)
     source_document_ids: list[str] = Field(min_length=1)
+    hours_basis: HoursBasis | None = None
 
 
 class WorkPlanContext(BaseModel):

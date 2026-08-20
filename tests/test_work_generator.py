@@ -216,3 +216,20 @@ def test_work_plan_api_returns_adaptive_contract(
         for package in payload["packages"]
         for work in package["works"]
     )
+
+
+def test_support_lifecycle_separates_one_time_and_monthly_work(
+    planner: StagePlanner, generator: WorkGenerator
+) -> None:
+    stage_plan = planner.build_plan(
+        "SUP_L1", StagePlanContext(include_candidates=False)
+    )
+    plan = generator.generate(stage_plan)
+    by_stage = {
+        package.stage_code: {work.hours_basis for work in package.works}
+        for package in plan.packages
+    }
+    assert by_stage["service_transition"] == {"Всего"}
+    assert by_stage["service_operation"] == {"В месяц"}
+    assert by_stage["service_improvement"] == {"В месяц"}
+    assert by_stage["service_governance"] == {"В месяц"}
