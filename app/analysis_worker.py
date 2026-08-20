@@ -16,6 +16,7 @@ from app.analyzer import (
     catalog_for_prompt,
 )
 from app.config import Settings
+from app.effort_estimator import AdaptiveEffortEstimator
 from app.models import (
     AnalysisRun,
     Document,
@@ -44,11 +45,13 @@ class AnalysisWorker:
         settings: Settings,
         stage_planner: StagePlanner,
         work_generator: WorkGenerator,
+        effort_estimator: AdaptiveEffortEstimator,
     ) -> None:
         self.session_factory = session_factory
         self.settings = settings
         self.stage_planner = stage_planner
         self.work_generator = work_generator
+        self.effort_estimator = effort_estimator
         self.storage = LocalFileStorage(
             settings.storage_root,
             settings.max_upload_size_bytes,
@@ -259,6 +262,18 @@ class AnalysisWorker:
                     project_specific_works=project_specific_works,
                 ),
             )
+            try:
+                work_plan = await self.effort_estimator.refine_with_ai(
+                    work_plan,
+                    api_key=self.settings.openai_api_key.get_secret_value(),
+                    model=self.settings.analysis_model,
+                )
+            except Exception as error:  # noqa: BLE001 - deterministic fallback is production-safe
+                logger.warning("AI effort refinement failed; using deterministic estimate", exc_info=error)
+                work_plan = self.effort_estimator.estimate(work_plan)
+                work_plan.warnings.append(
+                    "Не удалось уточнить трудозатраты моделью; применена детерминированная оценка."
+                )
             raw_result = result.model_dump(mode="json")
             raw_result["stage_plan"] = stage_plan.model_dump(mode="json")
             raw_result["work_plan"] = work_plan.model_dump(mode="json")

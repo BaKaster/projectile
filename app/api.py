@@ -101,9 +101,31 @@ async def build_project_work_plan(
         stage_plan = request.app.state.stage_planner.build_plan(
             project_type_code, payload.stage_context
         )
-        return request.app.state.work_generator.generate(
+        work_plan = request.app.state.work_generator.generate(
             stage_plan, payload.work_context
         )
+        effort_estimator = getattr(request.app.state, "effort_estimator", None)
+        settings = getattr(request.app.state, "settings", None)
+        if effort_estimator is None:
+            return work_plan
+        if (
+            payload.effort_mode == "auto"
+            and settings is not None
+            and settings.openai_api_key is not None
+        ):
+            try:
+                return await effort_estimator.refine_with_ai(
+                    work_plan,
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    model=settings.analysis_model,
+                )
+            except Exception:  # noqa: BLE001 - return a useful deterministic plan
+                estimated = effort_estimator.estimate(work_plan)
+                estimated.warnings.append(
+                    "Не удалось уточнить трудозатраты моделью; применена детерминированная оценка."
+                )
+                return estimated
+        return effort_estimator.estimate(work_plan)
     except StagePlanningError as error:
         status_code = 404 if str(error).startswith("unknown project type") else 422
         raise HTTPException(status_code=status_code, detail=str(error)) from error

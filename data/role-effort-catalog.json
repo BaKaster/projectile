@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0.0",
+  "hours_per_day": 8,
+  "source_note": "Rates are supplied by MONS in August 2026. Baseline hours are calibration priors and must be recalibrated from actuals.",
+  "roles": [
+    {"code": "security_team_lead", "name": "Тимлид-Архитектор ИБ", "external_id": 6034, "sale_rate": 7500, "cost_rate": 6506},
+    {"code": "security_lead_engineer", "name": "Ведущий инженер ИБ", "external_id": 6035, "sale_rate": 5500, "cost_rate": 4566},
+    {"code": "pentester", "name": "Пентестер", "external_id": 6036, "sale_rate": 5500, "cost_rate": 5200},
+    {"code": "security_lead_architect", "name": "Ведущий Архитектор ИБ", "external_id": 6037, "sale_rate": 6500, "cost_rate": 5559},
+    {"code": "security_architect", "name": "Архитектор ИБ", "external_id": 6039, "sale_rate": 5850, "cost_rate": 4905},
+    {"code": "shift_manager", "name": "Руководитель дежурной смены", "external_id": 472, "sale_rate": 4500, "cost_rate": 4169},
+    {"code": "support_supervisor", "name": "Супервизор (руководитель группы)", "external_id": 473, "sale_rate": 2500, "cost_rate": 1745},
+    {"code": "support_l1", "name": "L1 Инженер дежурной смены", "external_id": 474, "sale_rate": 2100, "cost_rate": 1424},
+    {"code": "support_l2", "name": "L2 Инженер технической поддержки", "external_id": 475, "sale_rate": 3000, "cost_rate": 2203},
+    {"code": "support_l3_manager", "name": "Руководитель 3 линии", "external_id": 476, "sale_rate": 5800, "cost_rate": 5609},
+    {"code": "technical_team_lead", "name": "Тимлид — Руководитель группы", "external_id": 477, "sale_rate": 5800, "cost_rate": 5196},
+    {"code": "network_l3", "name": "L3 Сетевой инженер", "external_id": 478, "sale_rate": 4200, "cost_rate": 3380},
+    {"code": "windows_l3", "name": "L3 Windows инженер", "external_id": 479, "sale_rate": 4200, "cost_rate": 3736},
+    {"code": "technical_architect", "name": "L3 Архитектор", "external_id": 480, "sale_rate": 6500, "cost_rate": 5695},
+    {"code": "devops_l3", "name": "L3 DevOps-инженер", "external_id": 1202, "sale_rate": 4200, "cost_rate": 2755},
+    {"code": "pmo_manager", "name": "Руководитель проектного офиса", "external_id": 1204, "sale_rate": 5800, "cost_rate": 4704},
+    {"code": "project_manager", "name": "Менеджер проектов", "external_id": 1205, "sale_rate": 4300, "cost_rate": 3265},
+    {"code": "project_administrator", "name": "Администратор проектов", "external_id": 1206, "sale_rate": 1700, "cost_rate": 1180}
+  ],
+  "profiles": [
+    {"code": "pentest", "keywords": ["pentest", "penetration", "уязвим", "сканир", "атак"], "primary_role": "pentester", "review_role": "security_team_lead", "base_hours": 40, "review_share": 0.15},
+    {"code": "security_architecture", "keywords": ["security", "иб", "защит", "risk", "риск", "compliance", "соответств", "аудит"], "primary_role": "security_architect", "review_role": "security_lead_architect", "base_hours": 24, "review_share": 0.2},
+    {"code": "network", "keywords": ["network", "сетев", "маршрут", "firewall", "межсетев"], "primary_role": "network_l3", "review_role": "technical_architect", "base_hours": 20, "review_share": 0.15},
+    {"code": "windows", "keywords": ["windows", "active directory", "ad ", "домен"], "primary_role": "windows_l3", "review_role": "technical_architect", "base_hours": 20, "review_share": 0.15},
+    {"code": "devops", "keywords": ["devops", "ci/cd", "container", "контейнер", "kubernetes", "автоматизац", "cloud", "облач"], "primary_role": "devops_l3", "review_role": "technical_architect", "base_hours": 24, "review_share": 0.15},
+    {"code": "support_l1", "keywords": ["регистрац", "классификац", "первая линия", "l1"], "primary_role": "support_l1", "review_role": "support_supervisor", "base_hours": 4, "review_share": 0.1},
+    {"code": "support_l2", "keywords": ["диагност", "вторая линия", "l2", "инцидент", "заявк"], "primary_role": "support_l2", "review_role": "support_supervisor", "base_hours": 8, "review_share": 0.1},
+    {"code": "project_management", "keywords": ["manage", "governance", "управлен", "координац", "статус", "план проект", "roadmap", "дорожн"], "primary_role": "project_manager", "review_role": "project_administrator", "base_hours": 16, "review_share": 0.25},
+    {"code": "architecture", "keywords": ["architect", "архитект", "design", "проектир", "модель to be", "схем"], "primary_role": "technical_architect", "review_role": "technical_team_lead", "base_hours": 32, "review_share": 0.15},
+    {"code": "technical", "keywords": [], "primary_role": "technical_team_lead", "review_role": "project_manager", "base_hours": 16, "review_share": 0.1}
+  ],
+  "signal_multipliers": {
+    "multi_site": 1.25,
+    "high_availability": 1.25,
+    "integration": 1.2,
+    "migration": 1.2,
+    "regulated_scope": 1.2,
+    "custom_development": 1.3,
+    "onsite_work": 1.15
+  },
+  "bounds": {"minimum_multiplier": 0.5, "maximum_multiplier": 3.0}
+}

@@ -7,6 +7,19 @@ from pydantic import BaseModel, Field, model_validator
 from app.stage_contracts import ProjectStagePlan
 
 
+class RoleAssignment(BaseModel):
+    role_code: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    role_name: str = Field(min_length=1)
+    responsibility: str = Field(min_length=1)
+    effort_hours: float = Field(gt=0)
+    sale_rate_rub_per_hour: float | None = Field(default=None, ge=0)
+    cost_rate_rub_per_hour: float | None = Field(default=None, ge=0)
+    sale_amount_rub: float | None = Field(default=None, ge=0)
+    cost_amount_rub: float | None = Field(default=None, ge=0)
+    confidence: Literal["low", "medium", "high"] = "low"
+    rationale: str = Field(min_length=1)
+
+
 class WorkItem(BaseModel):
     work_code: str = Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
     name: str = Field(min_length=1)
@@ -21,6 +34,9 @@ class WorkItem(BaseModel):
     selection_reason: str = Field(default="legacy_or_external_generator", min_length=1)
     matched_signals: list[str] = Field(default_factory=list)
     context_facts: list[str] = Field(default_factory=list)
+    role_assignments: list[RoleAssignment] = Field(default_factory=list)
+    effort_min_hours: float | None = Field(default=None, ge=0)
+    effort_max_hours: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_estimate_pair(self) -> WorkItem:
@@ -28,6 +44,18 @@ class WorkItem(BaseModel):
             raise ValueError(
                 "estimate_method and effort_hours must be set or omitted together"
             )
+        if self.effort_hours is not None and (
+            self.role_assignments
+            or self.effort_min_hours is not None
+            or self.effort_max_hours is not None
+        ):
+            if self.effort_min_hours is None or self.effort_max_hours is None:
+                raise ValueError("estimated work must include an effort range")
+            if not self.effort_min_hours <= self.effort_hours <= self.effort_max_hours:
+                raise ValueError("effort_hours must be inside the effort range")
+            assigned = sum(item.effort_hours for item in self.role_assignments)
+            if self.role_assignments and abs(assigned - self.effort_hours) > 0.011:
+                raise ValueError("effort_hours must equal the role assignment total")
         return self
 
 
@@ -82,6 +110,11 @@ class GeneratedWorkPlan(BaseModel):
     work_catalog_version: str | None = None
     packages: list[StageWorkPackage]
     warnings: list[str] = Field(default_factory=list)
+    estimation_version: str | None = None
+    estimation_mode: Literal["not_estimated", "deterministic", "ai_refined"] = "not_estimated"
+    total_effort_hours: float | None = Field(default=None, ge=0)
+    total_sale_amount_rub: float | None = Field(default=None, ge=0)
+    total_cost_amount_rub: float | None = Field(default=None, ge=0)
 
     def validate_against(
         self,

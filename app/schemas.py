@@ -101,6 +101,7 @@ class StagePlanRequest(StagePlanContext):
 class WorkPlanRequest(BaseModel):
     stage_context: StagePlanContext = Field(default_factory=StagePlanContext)
     work_context: WorkPlanContext = Field(default_factory=WorkPlanContext)
+    effort_mode: Literal["auto", "deterministic"] = "auto"
 
 
 class AnalysisRunResponse(BaseModel):

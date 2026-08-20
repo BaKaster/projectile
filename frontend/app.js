@@ -218,6 +218,38 @@ function card(title, text, extraClass = "") {
   const strong = document.createElement("strong"); strong.textContent = title; item.append(strong, document.createTextNode(text)); return item;
 }
 
+function workPlanBlock(plan) {
+  if (!plan?.packages?.length) return textBlock("План работ пока не сформирован.");
+  const container = document.createElement("div"); container.className = "work-plan";
+  const totals = document.createElement("div"); totals.className = "work-plan-totals";
+  const totalHours = document.createElement("strong"); totalHours.textContent = `${plan.total_effort_hours ?? "—"} чел.-ч`;
+  const mode = document.createElement("span"); mode.textContent = plan.estimation_mode === "ai_refined" ? "оценка уточнена моделью" : "расчёт по нормативам";
+  totals.append(totalHours, mode); container.append(totals);
+  for (const packageItem of plan.packages) {
+    const stage = document.createElement("details"); stage.className = "work-stage";
+    const heading = document.createElement("summary");
+    const stageHours = packageItem.works.reduce((sum, work) => sum + (work.effort_hours || 0), 0);
+    heading.textContent = `${packageItem.stage_code} · ${stageHours} чел.-ч`;
+    stage.append(heading);
+    const works = document.createElement("div"); works.className = "work-items";
+    for (const work of packageItem.works) {
+      const item = document.createElement("article"); item.className = "work-item";
+      const title = document.createElement("strong"); title.textContent = work.name;
+      const range = document.createElement("span"); range.className = "work-hours";
+      range.textContent = `${work.effort_hours} чел.-ч · ${work.effort_min_hours}–${work.effort_max_hours}`;
+      const roles = document.createElement("div"); roles.className = "work-roles";
+      for (const role of work.role_assignments || []) {
+        const chip = document.createElement("span");
+        chip.textContent = `${role.role_name}: ${role.effort_hours} ч`;
+        chip.title = role.responsibility; roles.append(chip);
+      }
+      item.append(title, range, roles); works.append(item);
+    }
+    stage.append(works); container.append(stage);
+  }
+  return container;
+}
+
 function renderAnalysis(run) {
   $("#thinking-message")?.remove(); $("#analysis-message")?.remove();
   const result = run.result;
@@ -237,6 +269,7 @@ function renderAnalysis(run) {
   root.append(analysisSection("Факты", gridBlock(result.facts, (fact) => card(fact.name, fact.value))));
   root.append(analysisSection("Допущения", listBlock(result.assumptions)));
   root.append(analysisSection("Проблемы и риски", gridBlock(result.issues, (issue) => card(issue.description, issue.impact_on_estimate))));
+  root.append(analysisSection("Этапы, роли и трудозатраты", workPlanBlock(result.work_plan)));
   root.append(analysisSection("Вопросы", gridBlock(result.questions, (question) => card(question.question, question.reason, "question"))));
   root.append(analysisSection("Предупреждения", listBlock(result.warnings)));
   const footer = document.createElement("div"); footer.className = "analysis-footer";
