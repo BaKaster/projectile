@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ApiError,
+  analysisReportUrl,
   buildUploadFormData,
   createProject,
   createChat,
@@ -11,6 +12,18 @@ import {
   skipAnalysisQuestions,
   uploadDocuments,
 } from "../api.js";
+
+test("analysis report URL carries the selected visual theme", () => {
+  const base = "http://localhost:8000";
+  assert.equal(
+    analysisReportUrl(base, "project", "run", "dark"),
+    `${base}/api/v1/projects/project/analysis-runs/run/report.pdf?theme=dark`,
+  );
+  assert.equal(
+    analysisReportUrl(base, "project", "run", "unknown"),
+    `${base}/api/v1/projects/project/analysis-runs/run/report.pdf?theme=light`,
+  );
+});
 
 function mockResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {

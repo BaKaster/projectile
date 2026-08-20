@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import textwrap
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -784,58 +783,216 @@ async def skip_analysis_questions(
     return _analysis_run_response(run, result)
 
 
-def _pdf_lines(result: ProjectAnalysis) -> list[tuple[str, int]]:
-    lines: list[tuple[str, int]] = [
-        ("Результат анализа проекта", 20),
-        (f"Тип проекта: {result.project_type_code or 'не определён'}", 13),
-        (f"Уверенность: {result.confidence}", 11),
-        ("", 8),
-        ("Резюме", 15),
-        (result.summary, 10),
-        ("", 8),
-        ("Обоснование", 15),
-        (result.rationale, 10),
-    ]
-    sections = [
-        ("Факты", [f"{item.get('name')}: {item.get('value')}" for item in result.facts]),
-        ("Допущения", result.assumptions),
-        ("Проблемы", [item.get("description", "") for item in result.issues]),
-        ("Вопросы", [item.get("question", "") for item in result.questions]),
-        ("Предупреждения", result.warnings),
-    ]
-    for title, items in sections:
-        if not items:
+def _wrap_pdf_text(text: str, font: object, size: float, width: float) -> list[str]:
+    """Wrap text using the embedded font metrics so Russian text stays aligned."""
+    wrapped: list[str] = []
+    for paragraph in str(text or "").splitlines() or [""]:
+        words = paragraph.split()
+        if not words:
+            wrapped.append("")
             continue
-        lines.extend([("", 8), (title, 15)])
-        lines.extend((f"• {item}", 10) for item in items)
-    return lines
+        line = ""
+        for word in words:
+            candidate = f"{line} {word}".strip()
+            if font.text_length(candidate, fontsize=size) <= width:
+                line = candidate
+                continue
+            if line:
+                wrapped.append(line)
+                line = ""
+            while font.text_length(word, fontsize=size) > width:
+                split_at = max(1, len(word) - 1)
+                while split_at > 1 and font.text_length(word[:split_at], fontsize=size) > width:
+                    split_at -= 1
+                wrapped.append(word[:split_at])
+                word = word[split_at:]
+            line = word
+        if line:
+            wrapped.append(line)
+    return wrapped or [""]
 
 
-def _render_analysis_pdf(result: ProjectAnalysis) -> bytes:
+def _render_analysis_pdf(
+    result: ProjectAnalysis,
+    run_id: uuid.UUID,
+    theme: Literal["light", "dark"] = "light",
+) -> bytes:
     try:
         import pymupdf
     except ImportError as error:  # pragma: no cover - installed in the Docker image
         raise HTTPException(status_code=503, detail="PDF renderer is unavailable") from error
 
-    font_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    regular_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+    bold_path = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
     document = pymupdf.open()
-    page = document.new_page(width=595, height=842)
-    font_name = "dejavu" if font_path.exists() else "helv"
-    if font_path.exists():
-        page.insert_font(fontname=font_name, fontfile=str(font_path))
-    y = 48.0
+    page_width, page_height = 595.0, 842.0
+    margin, content_width, bottom = 44.0, 507.0, 798.0
+    if theme == "dark":
+        page_background = (0.075, 0.075, 0.075)
+        black, white = (0.96, 0.96, 0.96), (0.075, 0.075, 0.075)
+        muted, soft = (0.76, 0.76, 0.76), (0.145, 0.145, 0.145)
+        line_color, outline, outlined_fill = (
+            (0.27, 0.27, 0.27),
+            (0.42, 0.42, 0.42),
+            (0.105, 0.105, 0.105),
+        )
+    else:
+        page_background = (0.985, 0.985, 0.98)
+        black, white = (0.07, 0.07, 0.07), (1.0, 1.0, 1.0)
+        muted, soft = (0.34, 0.34, 0.34), (0.94, 0.94, 0.93)
+        line_color, outline, outlined_fill = (
+            (0.82, 0.82, 0.81),
+            (0.58, 0.58, 0.57),
+            (0.995, 0.995, 0.99),
+        )
+    regular_name = "dejavu" if regular_path.exists() else "helv"
+    bold_name = "dejavu-bold" if bold_path.exists() else "helv-bold"
+    regular_font = pymupdf.Font(fontfile=str(regular_path)) if regular_path.exists() else pymupdf.Font("helv")
+    bold_font = pymupdf.Font(fontfile=str(bold_path)) if bold_path.exists() else pymupdf.Font("hebo")
+    page = None
+    y = margin
 
-    for text, size in _pdf_lines(result):
-        wrapped = textwrap.wrap(str(text), width=max(45, int(95 * 10 / size))) or [""]
-        for line in wrapped:
-            if y > 800:
-                page = document.new_page(width=595, height=842)
-                if font_path.exists():
-                    page.insert_font(fontname=font_name, fontfile=str(font_path))
-                y = 48.0
-            page.insert_text((48, y), line, fontname=font_name, fontsize=size)
-            y += size * 1.45
-        y += 3
+    def new_page() -> None:
+        nonlocal page, y
+        page = document.new_page(width=page_width, height=page_height)
+        page.draw_rect(
+            pymupdf.Rect(0, 0, page_width, page_height),
+            fill=page_background,
+            color=page_background,
+            overlay=False,
+        )
+        if regular_path.exists():
+            page.insert_font(fontname=regular_name, fontfile=str(regular_path))
+        if bold_path.exists():
+            page.insert_font(fontname=bold_name, fontfile=str(bold_path))
+        page.draw_rect(pymupdf.Rect(margin, 30, margin + 24, 54), fill=black, color=black, radius=.3)
+        page.insert_text((margin + 8.2, 47.2), "P", fontname=bold_name, fontsize=10, color=white)
+        page.insert_text((margin + 34, 46.5), "PROJECTILE", fontname=bold_name, fontsize=9, color=black)
+        page.insert_text((page_width - margin - 94, 46.5), f"АНАЛИЗ {str(run_id)[:8].upper()}", fontname=regular_name, fontsize=6.5, color=muted)
+        page.draw_line((margin, 65), (page_width - margin, 65), color=line_color, width=.7)
+        page_number = len(document)
+        page.insert_text((margin, 817), f"Projectile  •  Анализ проекта  •  {page_number}", fontname=regular_name, fontsize=6.5, color=muted)
+        y = 88.0
+
+    def ensure_space(height: float) -> None:
+        if y + height > bottom:
+            new_page()
+
+    def draw_lines(
+        text: str,
+        *,
+        size: float = 9.5,
+        bold: bool = False,
+        color: tuple[float, float, float] = black,
+        width: float = content_width,
+        x: float = margin,
+        line_height: float | None = None,
+    ) -> None:
+        nonlocal y
+        font = bold_font if bold else regular_font
+        font_name = bold_name if bold else regular_name
+        leading = line_height or size * 1.48
+        for line in _wrap_pdf_text(text, font, size, width):
+            ensure_space(leading)
+            page.insert_text((x, y + size), line, fontname=font_name, fontsize=size, color=color)
+            y += leading
+
+    def section(title: str) -> None:
+        nonlocal y
+        ensure_space(34)
+        y += 13
+        draw_lines(title, size=12, bold=True)
+        y += 7
+
+    def paragraph(text: str) -> None:
+        nonlocal y
+        draw_lines(text, size=10.5, color=muted, line_height=15.5)
+        y += 4
+
+    def card(title: str, text: str, *, outlined: bool = False) -> None:
+        nonlocal y
+        padding = 12.0
+        title_lines = _wrap_pdf_text(title, bold_font, 9.5, content_width - padding * 2)
+        body_lines = _wrap_pdf_text(text, regular_font, 9.7, content_width - padding * 2)
+        line_height = 14.0
+        all_rows: list[tuple[str, bool, tuple[float, float, float]]] = [
+            *((item, True, black) for item in title_lines),
+            *((item, False, muted) for item in body_lines),
+        ]
+        max_rows = max(2, int((bottom - 88 - padding * 2) / line_height))
+        for start in range(0, len(all_rows), max_rows):
+            rows = all_rows[start:start + max_rows]
+            height = padding * 2 + len(rows) * line_height + (3 if start == 0 else 0)
+            ensure_space(height + 7)
+            rect = pymupdf.Rect(margin, y, page_width - margin, y + height)
+            page.draw_rect(
+                rect,
+                color=outline if outlined else soft,
+                fill=outlined_fill if outlined else soft,
+                width=.8,
+                radius=.16,
+            )
+            cursor = y + padding
+            for row, is_bold, row_color in rows:
+                page.insert_text(
+                    (margin + padding, cursor + 8.5),
+                    row,
+                    fontname=bold_name if is_bold else regular_name,
+                    fontsize=9.5 if is_bold else 9.7,
+                    color=row_color,
+                )
+                cursor += line_height
+                if is_bold and start == 0:
+                    cursor += 3
+            y += height + 7
+
+    def bullet_list(items: list[str]) -> None:
+        nonlocal y
+        if not items:
+            paragraph("Нет существенных пунктов.")
+            return
+        for item in items:
+            ensure_space(18)
+            page.draw_rect(pymupdf.Rect(margin, y + 4, margin + 5, y + 9), fill=black, color=black, radius=.3)
+            draw_lines(str(item), size=10, color=muted, width=content_width - 17, x=margin + 17, line_height=15)
+            y += 5
+
+    new_page()
+    draw_lines("РЕЗУЛЬТАТ АНАЛИЗА", size=7, bold=True, color=muted)
+    y += 3
+    draw_lines(result.project_type_code or "Тип проекта не определён", size=20, bold=True, line_height=26)
+    y += 6
+    confidence = {"low": "НИЗКАЯ", "medium": "СРЕДНЯЯ", "high": "ВЫСОКАЯ"}.get(result.confidence, result.confidence.upper())
+    label_width = bold_font.text_length(f"УВЕРЕННОСТЬ: {confidence}", fontsize=7) + 22
+    page.draw_rect(pymupdf.Rect(margin, y, margin + label_width, y + 22), fill=black, color=black, radius=.5)
+    page.insert_text((margin + 11, y + 14.3), f"УВЕРЕННОСТЬ: {confidence}", fontname=bold_name, fontsize=7, color=white)
+    y += 34
+    card("Резюме", result.summary)
+
+    section("Обоснование")
+    paragraph(result.rationale)
+    section("Факты")
+    if result.facts:
+        for item in result.facts:
+            card(str(item.get("name") or "Факт"), str(item.get("value") or ""))
+    else:
+        paragraph("Нет существенных пунктов.")
+    section("Допущения")
+    bullet_list(result.assumptions)
+    section("Проблемы и риски")
+    if result.issues:
+        for item in result.issues:
+            card(str(item.get("description") or "Проблема"), str(item.get("impact_on_estimate") or ""))
+    else:
+        paragraph("Нет существенных пунктов.")
+    section("Вопросы")
+    if result.questions:
+        for item in result.questions:
+            card(str(item.get("question") or "Вопрос"), str(item.get("reason") or ""), outlined=True)
+    else:
+        paragraph("Нет существенных пунктов.")
+    section("Предупреждения")
+    bullet_list(result.warnings)
     return document.tobytes(garbage=4, deflate=True)
 
 
@@ -849,6 +1006,7 @@ async def download_analysis_pdf(
     project_id: uuid.UUID,
     run_id: uuid.UUID,
     session: SessionDependency,
+    theme: Literal["light", "dark"] = "light",
 ) -> Response:
     run = await session.scalar(
         select(AnalysisRun).where(
@@ -865,7 +1023,11 @@ async def download_analysis_pdf(
     if result is None:
         raise HTTPException(status_code=404, detail="Analysis result not found")
     return Response(
-        content=_render_analysis_pdf(result),
+        content=_render_analysis_pdf(result, run.id, theme),
         media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="project-analysis.pdf"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="projectile-analysis-{run.id}-{theme}.pdf"'
+            )
+        },
     )
