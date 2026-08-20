@@ -113,6 +113,10 @@ def test_build_populates_only_inputs_and_preserves_formulas(
 
     assert output.startswith(b"PK")
     assert after.formula_fingerprint() == before.formula_fingerprint()
+    assert any(
+        sheet == "Проверки" and cell == "B6" and "MATCH" in formula
+        for sheet, cell, formula in after.formula_fingerprint()
+    )
     assert after.read_rows("Ввод", 4, 16, 2, 2) == [
         ["Миграция платформы"],
         ["SUP_IT_Implementation"],
@@ -408,7 +412,7 @@ def test_extracted_facts_are_mapped_only_to_matching_project_parameters(
         [
             {"name": "Срок обслуживания", "value": "6 месяцев"},
             {"name": "Пользователей", "value": "1200 человек"},
-            {"name": "Обращений в месяц", "value": "385 шт."},
+            {"name": "Обращений в месяц", "value": "350 + 10% = 385 шт."},
             {"name": "Название системы", "value": "EasyDesk"},
         ],
     )
@@ -427,3 +431,74 @@ def test_explicit_type_parameter_wins_over_inferred_fact(
         [{"influence_code": "TERM_MONTHS", "value": 9}],
     )
     assert mapped == [{"influence_code": "TERM_MONTHS", "value": 9}]
+
+
+def test_support_volume_is_not_confused_with_contract_term(
+    service: ExcelEstimateService,
+) -> None:
+    mapped = service.infer_type_parameters(
+        "SUP_L1",
+        [
+            {"name": "Объем 1-й линии", "value": "Не более 350 заявок в месяц"},
+            {"name": "Объем 2-й линии", "value": "Не более 70 заявок в месяц"},
+        ],
+    )
+    assert mapped == [{"slot_number": 4, "value": 350}]
+
+
+def test_sla_minutes_and_calendar_year_are_not_contract_months(
+    service: ExcelEstimateService,
+) -> None:
+    mapped = service.infer_type_parameters(
+        "SUP_L1",
+        [
+            {
+                "name": "SLA регистрации",
+                "value": "15 минут для запросов на обслуживание; 90% в срок",
+            },
+            {
+                "name": "Срок завершения",
+                "value": "Не позднее сентября 2024 года",
+            },
+        ],
+    )
+    assert all(item["slot_number"] != 2 for item in mapped)
+
+
+def test_year_duration_is_converted_to_months(
+    service: ExcelEstimateService,
+) -> None:
+    mapped = service.infer_type_parameters(
+        "SUP_L1",
+        [{"name": "Срок договора", "value": "2 года"}],
+    )
+    assert {item["slot_number"]: item["value"] for item in mapped}[2] == 24
+
+
+def test_role_level_number_does_not_occupy_volume_parameter(
+    service: ExcelEstimateService,
+) -> None:
+    mapped = service.infer_type_parameters(
+        "SUP_L1",
+        [
+            {
+                "name": "Основной предмет работ",
+                "value": "Формирование 1-ю линии и 2-ю линию поддержки 1С ERP",
+            },
+            {"name": "Объем 1-й линии", "value": "350 заявок в месяц"},
+        ],
+    )
+    assert mapped == [{"slot_number": 4, "value": 350}]
+
+
+def test_strong_parameter_fact_wins_regardless_of_fact_order(
+    service: ExcelEstimateService,
+) -> None:
+    mapped = service.infer_type_parameters(
+        "SUP_L1",
+        [
+            {"name": "Описание", "value": "1 инцидент в примере"},
+            {"name": "Объем обращений", "value": "350 заявок в месяц"},
+        ],
+    )
+    assert mapped == [{"slot_number": 4, "value": 350}]

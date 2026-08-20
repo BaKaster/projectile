@@ -49,7 +49,9 @@ def test_migration_signal_activates_cutover_stage(planner: StagePlanner) -> None
 def test_support_profile_selects_transition_and_recurring_operation(
     planner: StagePlanner,
 ) -> None:
-    plan = planner.build_plan("SUP_L2")
+    plan = planner.build_plan(
+        "SUP_L2", StagePlanContext(signals=["incumbent_transition"])
+    )
     selected = {stage.code for stage in plan.stages if stage.status == "selected"}
     assert {
         "partner_sourcing",
@@ -57,6 +59,14 @@ def test_support_profile_selects_transition_and_recurring_operation(
         "service_operation",
         "service_improvement",
     } <= selected
+
+
+def test_support_transition_is_not_assumed_without_evidence(
+    planner: StagePlanner,
+) -> None:
+    plan = planner.build_plan("SUP_L2")
+    selected = {stage.code for stage in plan.stages if stage.status == "selected"}
+    assert "service_transition" not in selected
     operation = next(stage for stage in plan.stages if stage.code == "service_operation")
     assert operation.execution_mode == "recurring"
 

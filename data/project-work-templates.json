@@ -430,6 +430,7 @@
       "project_type_code": "SUP_L1",
       "template_code": "managed_support",
       "scope_dimensions": ["пользователи", "обращения в месяц", "каналы", "языки", "режим"],
+      "exclude_work_codes": ["service_transition.configure_service_tooling", "service_transition.configure_observability", "service_operation.handle_incidents_requests", "service_operation.perform_routine_operations", "service_operation.monitor_and_restore"],
       "additions": [
         {"stage_code": "service_transition", "works": ["Разработать скрипты приёма и маршрутизации", "Настроить обязательные поля, категории, каталог и шаблоны отчётов", "Обучить операторов и провести пилот L1"]},
         {"stage_code": "service_operation", "works": ["Принимать обращения по телефону, email и порталу", "Регистрировать, категоризировать, решать типовые запросы и маршрутизировать на L2/L3", "Поддерживать базу знаний и контролировать FCR"]}

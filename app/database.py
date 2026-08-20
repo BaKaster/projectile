@@ -25,6 +25,18 @@ async def ensure_schema_compatibility(engine) -> None:
     async with engine.begin() as connection:
         await connection.execute(
             text(
+                "ALTER TABLE projects ADD COLUMN IF NOT EXISTS "
+                "name_is_generated BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        await connection.execute(
+            text(
+                "UPDATE projects SET name_is_generated = TRUE "
+                "WHERE name IN ('Новый чат', 'Анализ документов')"
+            )
+        )
+        await connection.execute(
+            text(
                 "ALTER TABLE documents "
                 "ADD COLUMN IF NOT EXISTS source_path VARCHAR(1024)"
             )

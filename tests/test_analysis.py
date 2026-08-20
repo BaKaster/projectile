@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.analysis_contracts import DataGap, material_questions
-from app.analyzer import OpenAIProjectAnalyzer, SourceText
+from app.analyzer import OpenAIProjectAnalyzer, SourceText, _source_role
 from app.recognition import DocumentRecognizer, UnsafeArchiveError
 
 
@@ -140,6 +140,10 @@ def test_model_input_has_document_ids_and_is_bounded() -> None:
     assert document_id in prompt
     assert len(prompt) <= 10_100
     assert 'role="customer_requirements"' in prompt
+
+
+def test_generated_excel_has_distinct_source_role() -> None:
+    assert _source_role("generated/current-estimate.xlsx") == "generated_estimate"
 
 
 def test_spreadsheet_formula_errors_are_preserved(tmp_path: Path) -> None:

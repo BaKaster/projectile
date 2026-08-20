@@ -79,6 +79,41 @@ def test_numeric_scope_fact_increases_only_relevant_work_estimate() -> None:
     assert _work(scoped, code).estimate_method == "parametric"
 
 
+def test_scope_boundaries_scale_asset_work_but_not_unrelated_reporting() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan(
+        "SUP_IT_Audit",
+        StagePlanContext(signals=["multi_site"], include_candidates=False),
+    )
+    baseline = estimator.estimate(
+        generator.generate(stage_plan, WorkPlanContext(signals=["onsite_work", "multi_site"]))
+    )
+    scoped = estimator.estimate(
+        generator.generate(
+            stage_plan,
+            WorkPlanContext(
+                signals=["onsite_work", "multi_site"],
+                facts=[
+                    WorkFact(
+                        name="Границы работ",
+                        value="100 серверов, 100 единиц сетевого оборудования, 2 площадки",
+                        source_document_ids=["brief"],
+                    )
+                ]
+            ),
+        )
+    )
+
+    assert _work(
+        scoped, "evidence_collection.inventory_assets"
+    ).effort_hours > _work(
+        baseline, "evidence_collection.inventory_assets"
+    ).effort_hours
+    assert _work(scoped, "audit_report.prepare_report").effort_hours == _work(
+        baseline, "audit_report.prepare_report"
+    ).effort_hours
+
+
 def test_security_work_uses_security_catalog_role() -> None:
     planner, generator, estimator = _dependencies()
     stage_plan = planner.build_plan(

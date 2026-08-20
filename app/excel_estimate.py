@@ -225,6 +225,7 @@ class ExcelEstimateService:
         self._parameters = self._load_parameters(package)
         self._roles = self._load_roles(package)
         self._internal_role_codes = self._load_internal_role_codes(role_catalog_path)
+        self._validate_template_compatibility(package)
         self._template_formula_fingerprint = package.formula_fingerprint()
         self._recalculation_command = recalculation_command
         self._recalculation_timeout_seconds = recalculation_timeout_seconds
@@ -305,41 +306,115 @@ class ExcelEstimateService:
                 if name and definition.parameter_name.casefold() == name:
                     occupied_slots.add(definition.slot_number)
 
-        inferred: list[dict[str, Any]] = []
-        for raw_fact in facts:
+        ranked_candidates: list[
+            tuple[int, int, TypeParameterDefinition, int | float]
+        ] = []
+        for fact_index, raw_fact in enumerate(facts):
             fact_name = str(raw_fact.get("name") or "").strip()
             fact_value = str(raw_fact.get("value") or "").strip()
-            match = _NUMBER_IN_TEXT_RE.search(fact_value)
-            if not fact_name or match is None:
+            matches = [
+                match
+                for match in _NUMBER_IN_TEXT_RE.finditer(fact_value)
+                if not re.match(
+                    r"\s*(?:-[а-яё]+|[сc]\b)",
+                    fact_value[match.end() :],
+                    re.IGNORECASE,
+                )
+            ]
+            if not fact_name or not matches:
                 continue
+            # Commercial briefs often state a base, uplift and the accepted
+            # result as an equation (for example ``350 + 10% = 385``).  The
+            # right-hand result is the estimate driver, not the first operand.
+            match = matches[-1] if "=" in fact_value else matches[0]
             number = float(match.group(1).replace(",", "."))
             if number.is_integer():
                 number = int(number)
-            candidates = [
-                definition
-                for definition in definitions
-                if definition.slot_number not in occupied_slots
-            ]
-            scored = [
-                (self._fact_parameter_score(fact_name, fact_value, definition), definition)
-                for definition in candidates
-            ]
-            scored.sort(key=lambda item: item[0], reverse=True)
-            if not scored or scored[0][0] < 4:
-                continue
-            if len(scored) > 1 and scored[0][0] == scored[1][0]:
-                continue
-            definition = scored[0][1]
-            value: int | float = number
-            if definition.unit == "%":
-                value = number / 100 if number > 1 else number
-            try:
-                self._validate_parameter_value(definition, value)
-            except ExcelEstimateError:
+            for definition in definitions:
+                if definition.slot_number in occupied_slots:
+                    continue
+                score = self._fact_parameter_score(fact_name, fact_value, definition)
+                if score < 4:
+                    continue
+                value = self._coerce_fact_parameter_value(
+                    definition, number, fact_name, fact_value
+                )
+                if value is None:
+                    continue
+                try:
+                    self._validate_parameter_value(definition, value)
+                except ExcelEstimateError:
+                    continue
+                ranked_candidates.append((score, fact_index, definition, value))
+
+        # Facts are not ordered by relevance in model output.  Resolve the
+        # strongest fact/slot pairs globally so an early incidental number
+        # cannot occupy a slot before a later exact volume or duration fact.
+        ranked_candidates.sort(key=lambda item: (-item[0], item[1], item[2].slot_number))
+        inferred: list[dict[str, Any]] = []
+        used_facts: set[int] = set()
+        for _score, fact_index, definition, value in ranked_candidates:
+            if fact_index in used_facts or definition.slot_number in occupied_slots:
                 continue
             inferred.append({"slot_number": definition.slot_number, "value": value})
+            used_facts.add(fact_index)
             occupied_slots.add(definition.slot_number)
         return [*explicit_values, *inferred]
+
+    @staticmethod
+    def _coerce_fact_parameter_value(
+        definition: TypeParameterDefinition,
+        number: int | float,
+        fact_name: str,
+        fact_value: str,
+    ) -> int | float | None:
+        """Accept a fact only when its unit is compatible with the Excel slot."""
+        unit = (definition.unit or "").casefold().strip()
+        haystack = f"{fact_name} {fact_value}".casefold()
+        if unit == "%":
+            if "%" not in fact_value and "процент" not in haystack:
+                return None
+            return number / 100 if number > 1 else number
+        if "мес" in unit:
+            if re.search(r"\b(мес|месяц|месяца|месяцев)\b", haystack):
+                # A frequency such as "350 requests per month" is not a term.
+                duration_markers = (
+                    "срок",
+                    "период",
+                    "длительност",
+                    "договор",
+                    "обслуживан",
+                    "подписк",
+                    "лицензи",
+                    "аренд",
+                )
+                return number if any(item in haystack for item in duration_markers) else None
+            if re.search(r"\b(год|года|лет)\b", haystack):
+                # Four-digit values are calendar years, never a duration.
+                return number * 12 if 0 < number <= 20 else None
+            return None
+        if unit == "дн." or unit == "дн":
+            if re.search(r"\b(дн|день|дня|дней)\b", haystack):
+                return number
+            if re.search(r"\b(нед|неделя|недели|недель)\b", haystack):
+                return number * 7
+            return None
+        if unit == "ч":
+            if re.search(r"\b(ч|час|часа|часов)\b", haystack):
+                return number
+            if re.search(r"\b(мин|минута|минуты|минут)\b", haystack):
+                return number / 60
+            return None
+        if "ч/нед" in unit:
+            if re.search(
+                r"\b(ч|час|часа|часов)\b.{0,20}\b(нед|неделю|неделя|недели)\b",
+                haystack,
+            ):
+                return number
+            return None
+        if unit == "fte" and "fte" not in haystack:
+            return None
+        return number
 
     @staticmethod
     def _fact_parameter_score(
@@ -354,7 +429,7 @@ class ExcelEstimateService:
         haystack = f"{fact_name} {fact_value}".casefold()
         aliases = {
             "QTY": {"количество", "объем", "объём", "пользователей", "систем", "лицензий", "единиц", "объектов"},
-            "TERM_MONTHS": {"срок", "период", "длительность", "месяц", "месяцев", "мес"},
+            "TERM_MONTHS": {"срок", "период", "длительность", "договор", "обслуживание", "подписка", "лицензия", "аренда"},
             "COMPLEXITY": {"сложность", "коэффициент", "коэф"},
             "PARALLEL_FTE": {"fte", "команда", "специалистов", "параллельных"},
             "RISK_PCT": {"риск", "резерв"},
@@ -363,9 +438,34 @@ class ExcelEstimateService:
             "MARKUP": {"наценка"},
         }
         score += sum(2 for alias in aliases.get(definition.influence_code, set()) if alias in haystack)
+        parameter_name = definition.parameter_name.casefold()
+        info_aliases: set[str] = set()
+        if any(marker in parameter_name for marker in ("обращен", "событ")):
+            info_aliases = {"обращен", "событ", "заяв", "тикет", "инцидент"}
+        elif "площад" in parameter_name or "организац" in parameter_name:
+            info_aliases = {"площад", "офис", "филиал", "организац", "локац"}
+        elif "интеграц" in parameter_name or "миграц" in parameter_name:
+            info_aliases = {"интеграц", "миграц", "поток"}
+        elif "сесс" in parameter_name:
+            info_aliases = {"сесс", "воркшоп", "интервью"}
+        elif "документ" in parameter_name:
+            info_aliases = {"документ", "регламент", "инструкц"}
+        score += sum(4 for alias in info_aliases if alias in haystack)
         unit = (definition.unit or "").casefold()
         if "мес" in unit and re.search(r"\b(мес|месяц|месяцев|месяца)\b", haystack):
-            score += 4
+            duration_markers = (
+                "срок",
+                "период",
+                "длительност",
+                "договор",
+                "обслуживан",
+                "подписк",
+                "лицензи",
+                "аренд",
+            )
+            # "Обращений в месяц" is a frequency, not a duration.  A month
+            # unit reinforces TERM_MONTHS only together with duration wording.
+            score += 4 if any(marker in haystack for marker in duration_markers) else -3
         if "дн" in unit and re.search(r"\b(дн|день|дней|дня)\b", haystack):
             score += 4
         if unit == "%" and ("%" in fact_value or "процент" in haystack):
@@ -385,7 +485,6 @@ class ExcelEstimateService:
         parameters = self._resolve_parameters(payload)
         self._validate_dependencies(payload, parameters)
         package = _WorkbookPackage(self._template)
-
         package.clear("Ввод", ["D20:D27", "A36:D39"])
         package.clear("Расчёт", ["A6:J105", "U6:V105"])
         package.clear("Внешние затраты", ["A6:G25", "K6:K25"])
@@ -465,6 +564,26 @@ class ExcelEstimateService:
             result = self._recalculate_with_libreoffice(result)
         return result
 
+    @staticmethod
+    def _validate_template_compatibility(package: _WorkbookPackage) -> None:
+        expected = (
+            "IF(ISNUMBER(MATCH('Ввод'!$B$5,"
+            "'Справочник типов'!$A$2:$A$27,0)),1,0)"
+        )
+        actual = next(
+            (
+                formula
+                for sheet, cell, formula in package.formula_fingerprint()
+                if sheet == "Проверки" and cell == "B6"
+            ),
+            None,
+        )
+        if actual != expected:
+            raise ExcelEstimateError(
+                "Excel template is incompatible: Проверки!B6 must use the "
+                "cross-engine MATCH formula"
+            )
+
     def _recalculate_with_libreoffice(self, workbook: bytes) -> bytes:
         """Open/save in a real spreadsheet engine so formula caches are current."""
         with tempfile.TemporaryDirectory(prefix="projectile-xlsx-") as directory:
@@ -520,7 +639,22 @@ class ExcelEstimateService:
                 raise ExcelEstimateError(
                     "recalculation engine damaged workbook structure or formulas"
                 )
-            return recalculated
+            self._refresh_compatibility_status_caches(verification)
+            return verification.to_bytes()
+
+    @staticmethod
+    def _refresh_compatibility_status_caches(package: _WorkbookPackage) -> None:
+        """Refresh status cells that LibreOffice occasionally leaves one step stale."""
+        recognized = package.read_rows("Проверки", 6, 6, 2, 2)[0][0] == 1
+        package.write_formula_cached_value(
+            "Проверки", "E6", "PASS" if recognized else "FAIL"
+        )
+        statuses = [
+            row[0] for row in package.read_rows("Проверки", 7, 14, 5, 5)
+        ]
+        model_status = "FAIL" if not recognized or "FAIL" in statuses else "PASS"
+        package.write_formula_cached_value("Проверки", "B3", model_status)
+        package.write_formula_cached_value("Итого по проекту", "B11", model_status)
 
     def _resolve_parameters(self, payload: ExcelEstimateRequest) -> dict[int, Any]:
         definitions = self.parameter_definitions(payload.project_type_code)
@@ -844,6 +978,29 @@ class _WorkbookPackage:
                 cell = ET.Element(f"{{{_MAIN_NS}}}c", {"r": address})
                 row.append(cell)
             self._set_cell_value(cell, value)
+
+    def write_formula_cached_value(
+        self, sheet_name: str, address: str, value: str | int | float
+    ) -> None:
+        root = self._tree(self.sheet_paths[sheet_name])
+        cell = next(
+            (
+                item
+                for item in root.findall(f".//{{{_MAIN_NS}}}c")
+                if item.attrib.get("r") == address
+            ),
+            None,
+        )
+        if cell is None or cell.find(f"{{{_MAIN_NS}}}f") is None:
+            raise ExcelEstimateError(f"formula target does not exist: {sheet_name}!{address}")
+        for child in list(cell):
+            if child.tag in {f"{{{_MAIN_NS}}}v", f"{{{_MAIN_NS}}}is"}:
+                cell.remove(child)
+        if isinstance(value, str):
+            cell.attrib["t"] = "str"
+        else:
+            cell.attrib.pop("t", None)
+        ET.SubElement(cell, f"{{{_MAIN_NS}}}v").text = str(value)
 
     @staticmethod
     def _set_cell_value(cell: ET.Element, value: Any) -> None:

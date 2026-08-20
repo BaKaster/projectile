@@ -43,6 +43,7 @@ class StageSignalEvidence(BaseModel):
 
 
 class ModelAnalysis(BaseModel):
+    project_name: str | None = Field(default=None, min_length=1, max_length=120)
     project_type_code: str | None = None
     confidence: Confidence
     summary: str = Field(min_length=1)

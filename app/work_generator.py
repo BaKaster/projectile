@@ -89,6 +89,7 @@ class ProjectTypeWorkSpecialization(BaseModel):
     scope_dimensions: list[str] = Field(default_factory=list)
     additions: list[SpecializationAddition] = Field(default_factory=list)
     exclusions: list[str] = Field(default_factory=list)
+    exclude_work_codes: list[str] = Field(default_factory=list)
 
 
 class WorkCatalog(BaseModel):
@@ -243,6 +244,11 @@ class WorkGenerator:
             works: list[WorkItem] = []
             for definition in stage_template.works:
                 work_code = f"{stage.code}.{definition.code}"
+                if (
+                    work_code in specialization.exclude_work_codes
+                    and work_code not in resolved_context.include_work_codes
+                ):
+                    continue
                 matched_signals = sorted(active_signals & set(definition.signals))
                 selection_reason = self._selection_reason(
                     work_code,
@@ -613,4 +619,12 @@ class WorkGenerator:
                 raise WorkCatalogError(
                     f"specialization {project_type_code} uses unknown stages: "
                     + ", ".join(sorted(unknown_stages))
+                )
+            unknown_exclusions = set(specialization.exclude_work_codes) - self._known_codes(
+                self._templates[specialization.template_code], specialization
+            )
+            if unknown_exclusions:
+                raise WorkCatalogError(
+                    f"specialization {project_type_code} excludes unknown works: "
+                    + ", ".join(sorted(unknown_exclusions))
                 )

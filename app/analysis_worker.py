@@ -4,6 +4,7 @@ import asyncio
 import logging
 import uuid
 from contextlib import suppress
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -21,6 +22,7 @@ from app.models import (
     AnalysisRun,
     Document,
     DocumentExtraction,
+    Project,
     ProjectAnalysis,
     ProjectType,
 )
@@ -36,6 +38,17 @@ from app.work_contracts import WorkFact, WorkPlanContext
 from app.work_generator import WorkGenerator
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_project_name(value: str | None, fallback: str) -> str:
+    normalized = " ".join((value or "").split()).strip(" ._-—")
+    if not normalized or normalized.casefold() in {
+        "проект",
+        "новый чат",
+        "анализ документов",
+    }:
+        normalized = " ".join(fallback.split()).strip(" ._-—")
+    return normalized[:80].rstrip(" ._-—") or "Проектная оценка"
 
 
 class AnalysisWorker:
@@ -199,6 +212,23 @@ class AnalysisWorker:
                     if item.code in self.work_generator.signal_codes
                 }
             )
+            managed_support_codes = {
+                "SUP_L1",
+                "SUP_L2",
+                "SUP_L3_HW",
+                "SUP_L3_SW",
+                "SUP_SUPPLIER",
+                "SUP_App_Support",
+                "SEC_Support",
+            }
+            if (
+                result.project_type_code in managed_support_codes
+                and {"training", "custom_development"} & set(recognized_signals)
+                and "incumbent_transition" in self.work_generator.signal_codes
+            ):
+                recognized_signals = sorted(
+                    {*recognized_signals, "incumbent_transition"}
+                )
             ignored_signals = sorted(
                 {
                     item.code
@@ -262,17 +292,26 @@ class AnalysisWorker:
                     project_specific_works=project_specific_works,
                 ),
             )
-            try:
-                work_plan = await self.effort_estimator.refine_with_ai(
-                    work_plan,
-                    api_key=self.settings.openai_api_key.get_secret_value(),
-                    model=self.settings.analysis_model,
-                )
-            except Exception as error:  # noqa: BLE001 - deterministic fallback is production-safe
-                logger.warning("AI effort refinement failed; using deterministic estimate", exc_info=error)
+            if self.settings.analysis_ai_effort_refinement:
+                try:
+                    work_plan = await self.effort_estimator.refine_with_ai(
+                        work_plan,
+                        api_key=self.settings.openai_api_key.get_secret_value(),
+                        model=self.settings.analysis_model,
+                    )
+                except Exception as error:
+                    logger.warning(
+                        "AI effort refinement failed; using deterministic estimate",
+                        exc_info=error,
+                    )
+                    work_plan = self.effort_estimator.estimate(work_plan)
+                    work_plan.warnings.append(
+                        "Не удалось уточнить трудозатраты моделью; применена детерминированная оценка."
+                    )
+            else:
                 work_plan = self.effort_estimator.estimate(work_plan)
                 work_plan.warnings.append(
-                    "Не удалось уточнить трудозатраты моделью; применена детерминированная оценка."
+                    "Состав работ определён по документам, часы рассчитаны детерминированно по каталогу норм."
                 )
             raw_result = result.model_dump(mode="json")
             raw_result["stage_plan"] = stage_plan.model_dump(mode="json")
@@ -282,6 +321,10 @@ class AnalysisWorker:
             run = await session.get(AnalysisRun, run_id, with_for_update=True)
             if run is None:
                 return
+            project = await session.get(Project, run.project_id, with_for_update=True)
+            if project is not None and project.name_is_generated:
+                project.name = _clean_project_name(result.project_name, result.summary)
+                project.updated_at = datetime.now(UTC)
             session.add(
                 ProjectAnalysis(
                     run_id=run.id,

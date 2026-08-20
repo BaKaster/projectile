@@ -222,7 +222,8 @@ def test_support_lifecycle_separates_one_time_and_monthly_work(
     planner: StagePlanner, generator: WorkGenerator
 ) -> None:
     stage_plan = planner.build_plan(
-        "SUP_L1", StagePlanContext(include_candidates=False)
+        "SUP_L1",
+        StagePlanContext(signals=["incumbent_transition"], include_candidates=False),
     )
     plan = generator.generate(stage_plan)
     by_stage = {

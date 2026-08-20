@@ -5,7 +5,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -31,6 +31,7 @@ from app.database import get_session
 from app.excel_estimate import (
     ExcelEstimateError,
     ExcelEstimateRequest,
+    ExcelEstimateService,
     TypeParameterDefinition,
 )
 from app.models import (
@@ -65,7 +66,13 @@ from app.schemas import (
 )
 from app.stage_contracts import ProjectStagePlan
 from app.stage_planner import StagePlanningError
-from app.storage import FileTooLargeError, LocalFileStorage, PersistedFile, StagedUpload
+from app.storage import (
+    FileTooLargeError,
+    LocalFileStorage,
+    PersistedFile,
+    StagedUpload,
+    safe_filename,
+)
 from app.work_contracts import GeneratedWorkPlan
 from app.work_generator import WorkGenerationError
 
@@ -219,7 +226,11 @@ async def create_project(
     payload: ProjectCreate,
     session: SessionDependency,
 ) -> Project:
-    project = Project(id=payload.id or uuid.uuid4(), name=payload.name.strip())
+    project = Project(
+        id=payload.id or uuid.uuid4(),
+        name=payload.name.strip(),
+        name_is_generated=False,
+    )
     session.add(project)
     try:
         await session.commit()
@@ -311,9 +322,7 @@ async def _append_chat_message(
             ),
         ]
     )
-    project.updated_at = datetime.now(timezone.utc)
-    if project.name == "Новый чат" and kind == "query":
-        project.name = normalized[:80] + ("…" if len(normalized) > 80 else "")
+    project.updated_at = datetime.now(UTC)
     await session.flush()
     return message
 
@@ -325,7 +334,11 @@ async def _append_chat_message(
     tags=["chats"],
 )
 async def create_chat(payload: ChatCreate, session: SessionDependency) -> Project:
-    project = Project(name=(payload.name or "Новый чат").strip() or "Новый чат")
+    supplied_name = (payload.name or "").strip()
+    project = Project(
+        name=supplied_name or "Новый чат",
+        name_is_generated=not bool(supplied_name),
+    )
     session.add(project)
     await session.commit()
     await session.refresh(project)
@@ -415,7 +428,8 @@ async def update_chat(
     if not name:
         raise HTTPException(status_code=422, detail="Chat name cannot be empty")
     project.name = name
-    project.updated_at = datetime.now(timezone.utc)
+    project.name_is_generated = False
+    project.updated_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(project)
     return project
@@ -950,7 +964,7 @@ async def skip_analysis_questions(
     run.current_step = "questions_skipped"
     project = await session.get(Project, project_id)
     if project is not None:
-        project.updated_at = datetime.now(timezone.utc)
+        project.updated_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(run)
     return _analysis_run_response(run, result)
@@ -1398,6 +1412,64 @@ async def download_analysis_xlsx(
         content = service.build(payload)
     except ExcelEstimateError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    storage = LocalFileStorage(
+        request.app.state.settings.storage_root,
+        request.app.state.settings.max_upload_size_bytes,
+        request.app.state.settings.upload_chunk_size_bytes,
+    )
+    artifact_source_path = "generated/current-estimate.xlsx"
+    checksum = hashlib.sha256(content).hexdigest()
+    previous = await session.scalar(
+        select(Document)
+        .join(ProjectDocument, ProjectDocument.document_id == Document.id)
+        .where(
+            ProjectDocument.project_id == project_id,
+            Document.source_path == artifact_source_path,
+        )
+        .order_by(Document.version.desc())
+        .limit(1)
+    )
+    if previous is None or previous.checksum_sha256 != checksum:
+        version = 1 if previous is None else previous.version + 1
+        document_id = uuid.uuid4()
+        stored_filename = safe_filename(f"{project.name}.xlsx")
+        persisted = storage.persist_bytes(
+            content,
+            project_id,
+            document_id,
+            version,
+            stored_filename,
+        )
+        try:
+            session.add_all(
+                [
+                    Document(
+                        id=document_id,
+                        original_filename=stored_filename,
+                        source_path=artifact_source_path,
+                        stored_filename=stored_filename,
+                        media_type=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet"
+                        ),
+                        size_bytes=len(content),
+                        checksum_sha256=checksum,
+                        storage_uri=persisted.storage_uri,
+                        version=version,
+                    ),
+                    ProjectDocument(project_id=project_id, document_id=document_id),
+                    DocumentExtraction(
+                        document_id=document_id,
+                        status="pending",
+                        tables=[],
+                        errors=[],
+                    ),
+                ]
+            )
+            await session.commit()
+        except Exception:
+            storage.remove_persisted(persisted)
+            raise
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", project.name).strip("-_")
     ascii_name = f"{safe_name or 'estimate'}.xlsx"
     unicode_name = quote(f"{project.name}.xlsx")

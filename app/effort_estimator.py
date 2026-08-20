@@ -13,6 +13,7 @@ from app.work_contracts import GeneratedWorkPlan, RoleAssignment, WorkItem
 
 ESTIMATION_VERSION = "role-effort-1.0.0"
 _NUMBER_RE = re.compile(r"(?<![\w.])(\d+(?:[.,]\d+)?)")
+_WORD_RE = re.compile(r"[0-9a-zа-яё]+", re.IGNORECASE)
 
 
 class CatalogRole(BaseModel):
@@ -190,11 +191,60 @@ class AdaptiveEffortEstimator:
         multiplier = math.prod(
             self.catalog.signal_multipliers.get(signal, 1.0) for signal in set(work.matched_signals)
         )
-        values = [
-            float(match.group(1).replace(",", "."))
-            for fact in work.context_facts
-            for match in _NUMBER_RE.finditer(fact)
-        ]
+        driver_tokens = {
+            token[:7]
+            for token in _WORD_RE.findall(
+                " ".join([work.name, *work.estimation_drivers]).casefold()
+            )
+            if len(token) >= 4
+        }
+        values: list[float] = []
+        for fact in work.context_facts:
+            fact_name, _, fact_value = fact.partition(":")
+            fact_tokens = {
+                token[:7]
+                for token in _WORD_RE.findall(fact_name.casefold())
+                if len(token) >= 4
+            }
+            # A number affects effort only when the named driver belongs to
+            # this work.  Project-wide scope facts must not multiply every
+            # reporting, governance and transition task.
+            semantic_scope = (
+                bool(
+                    driver_tokens
+                    & {
+                        "объекты"[:7],
+                        "площадки"[:7],
+                        "оборудование"[:7],
+                        "серверы"[:7],
+                        "системы"[:7],
+                        "активы"[:7],
+                        "ке",
+                    }
+                )
+                and bool(
+                    fact_tokens
+                    & {
+                        "границы"[:7],
+                        "масштаб"[:7],
+                        "объем"[:7],
+                        "объём"[:7],
+                        "количество"[:7],
+                        "состав"[:7],
+                        "объекты"[:7],
+                    }
+                )
+            )
+            if not (driver_tokens & fact_tokens) and not semantic_scope:
+                continue
+            for match in _NUMBER_RE.finditer(fact_value):
+                if re.match(
+                    r"\s*(?:-[а-яё]+|[сc]\b)",
+                    fact_value[match.end() :],
+                    re.IGNORECASE,
+                ):
+                    continue
+                values.append(float(match.group(1).replace(",", ".")))
         if values:
             # Logarithmic growth prevents a raw object count from exploding the estimate.
             multiplier *= 1 + min(math.log2(max(values) + 1) / 6, 1.5)

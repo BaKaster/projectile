@@ -129,6 +129,13 @@ async function refreshHistory() {
   }
 }
 
+async function refreshCurrentChatIdentity() {
+  if (!state.chat) return;
+  const chat = await getChat(apiBase, state.chat.id);
+  state.chat.name = chat.name;
+  elements.title.textContent = chat.name;
+}
+
 function beginHistoryEdit(row, chat) {
   const form = document.createElement("form"); form.className = "history-edit-form";
   const input = document.createElement("input"); input.value = chat.name; input.maxLength = 300; input.setAttribute("aria-label", "Новое название чата");
@@ -335,7 +342,6 @@ function renderExcelPanel(run) {
     }
     const link = document.createElement("a");
     link.href = analysisExcelUrl(apiBase, state.chat.id, run.run_id);
-    link.download = `projectile-analysis-${run.run_id}.xlsx`;
     document.body.append(link); link.click(); link.remove();
   });
   panel.append(button);
@@ -401,6 +407,7 @@ async function beginPolling(runId) {
     });
     if (!run) return;
     state.run = run;
+    await refreshCurrentChatIdentity();
     if (SUCCESS_STATUSES.has(run.status)) renderAnalysis(run); else renderFailure(run.errors);
   } catch (error) { if (error.name !== "AbortError") showToast(formatApiError(error)); }
   finally { setBusy(false); updateQuestionMode(); }
@@ -423,7 +430,7 @@ async function submitMessage(event) {
   setBusy(true);
   try {
     if (!state.chat) {
-      state.chat = await createChat(apiBase, content.slice(0, 80) || "Анализ документов");
+      state.chat = await createChat(apiBase);
       elements.title.textContent = state.chat.name;
     }
     if (sentFiles.length) await uploadDocuments(apiBase, state.chat.id, sentFiles, crypto.randomUUID());

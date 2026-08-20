@@ -41,6 +41,7 @@ class Project(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(300), nullable=False)
+    name_is_generated: Mapped[bool] = mapped_column(nullable=False, default=False)
 
 
 class ChatMessage(Base):
