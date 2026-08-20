@@ -129,10 +129,11 @@ async def build_project_work_plan(
             and settings.openai_api_key is not None
         ):
             try:
-                return await effort_estimator.refine_with_ai(
+                return await effort_estimator.plan_with_ai(
                     work_plan,
                     api_key=settings.openai_api_key.get_secret_value(),
                     model=settings.analysis_model,
+                    reasoning_effort=settings.analysis_reasoning_effort,
                 )
             except Exception:  # noqa: BLE001 - return a useful deterministic plan
                 estimated = effort_estimator.estimate(work_plan)

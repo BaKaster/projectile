@@ -116,7 +116,7 @@ class GeneratedWorkPlan(BaseModel):
     packages: list[StageWorkPackage]
     warnings: list[str] = Field(default_factory=list)
     estimation_version: str | None = None
-    estimation_mode: Literal["not_estimated", "deterministic", "ai_refined"] = "not_estimated"
+    estimation_mode: Literal["not_estimated", "deterministic", "ai_refined", "ai_direct"] = "not_estimated"
     total_effort_hours: float | None = Field(default=None, ge=0)
     total_sale_amount_rub: float | None = Field(default=None, ge=0)
     total_cost_amount_rub: float | None = Field(default=None, ge=0)

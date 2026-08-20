@@ -1,6 +1,13 @@
 from pathlib import Path
 
-from app.effort_estimator import AdaptiveEffortEstimator
+import pytest
+
+from app.effort_estimator import (
+    AIAssignment,
+    AIDirectEstimationResult,
+    AIWorkEstimate,
+    AdaptiveEffortEstimator,
+)
 from app.stage_contracts import StagePlanContext
 from app.stage_planner import StagePlanner
 from app.work_contracts import WorkFact, WorkPlanContext
@@ -144,3 +151,73 @@ def test_support_projects_cannot_receive_security_roles() -> None:
     }
     assert "pentester" not in assigned
     assert not any(code.startswith("security_") for code in assigned)
+
+
+def test_direct_ai_plan_selects_its_own_scope_roles_and_hours() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan("SUP_L1", StagePlanContext(include_candidates=False))
+    candidate = generator.generate(stage_plan, WorkPlanContext())
+    selected = next(work for package in candidate.packages for work in package.works)
+
+    result = estimator._apply_direct_ai_plan(
+        candidate,
+        AIDirectEstimationResult(
+            works=[
+                AIWorkEstimate(
+                    work_code=selected.work_code,
+                    rationale="Работа прямо следует из подтверждённого объёма поддержки.",
+                    assignments=[
+                        AIAssignment(
+                            role_code="support_l1",
+                            effort_hours=7.25,
+                            responsibility="Приём и первичная обработка обращений",
+                        ),
+                        AIAssignment(
+                            role_code="support_supervisor",
+                            effort_hours=1.25,
+                            responsibility="Контроль качества обслуживания",
+                        ),
+                    ],
+                )
+            ],
+            scope_risks=["Не указан фактический поток обращений."],
+        ),
+    )
+
+    assert result.estimation_mode == "not_estimated"
+    assert [work.work_code for package in result.packages for work in package.works] == [
+        selected.work_code
+    ]
+    work = _work(result, selected.work_code)
+    assert work.estimate_method == "expert"
+    assert work.effort_hours == 8.5
+    assert {item.role_code for item in work.role_assignments} == {
+        "support_l1",
+        "support_supervisor",
+    }
+
+
+def test_direct_ai_plan_rejects_unknown_catalogue_work_or_role() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan("SUP_L1", StagePlanContext(include_candidates=False))
+    candidate = generator.generate(stage_plan, WorkPlanContext())
+
+    with pytest.raises(ValueError, match="unknown work"):
+        estimator._apply_direct_ai_plan(
+            candidate,
+            AIDirectEstimationResult(
+                works=[
+                    AIWorkEstimate(
+                        work_code="invented.work",
+                        rationale="Не должно быть принято.",
+                        assignments=[
+                            AIAssignment(
+                                role_code="support_l1",
+                                effort_hours=1,
+                                responsibility="Тест",
+                            )
+                        ],
+                    )
+                ]
+            ),
+        )

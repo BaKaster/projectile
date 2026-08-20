@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     )
     analysis_model: str = "gpt-5.5"
     analysis_reasoning_effort: str = "high"
+    analysis_ai_direct_estimation: bool = True
     analysis_ai_effort_refinement: bool = True
     analysis_max_input_characters: int = Field(default=300_000, gt=10_000)
     analysis_digest_concurrency: int = Field(default=2, gt=0, le=8)

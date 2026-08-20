@@ -328,9 +328,9 @@ class AnalysisWorker:
                         for fact in result.facts
                     ],
                     project_specific_works=project_specific_works,
-                    include_work_codes=result.include_work_codes,
-                    exclude_work_codes=result.exclude_work_codes,
-                    scope_mode=result.scope_mode,
+                    # Candidate catalogue for the final AI planner. Do not
+                    # lock scope to the classifier's first pass.
+                    scope_mode="baseline",
                 )
             try:
                 work_plan = self.work_generator.generate(stage_plan, work_context)
@@ -358,13 +358,17 @@ class AnalysisWorker:
                         scope_mode="baseline",
                     ),
                 )
-            if self.settings.analysis_ai_effort_refinement:
+            if self.settings.analysis_ai_direct_estimation:
                 try:
-                    work_plan = await self.effort_estimator.refine_with_ai(
+                    work_plan = await self.effort_estimator.plan_with_ai(
                         work_plan,
                         api_key=self.settings.openai_api_key.get_secret_value(),
                         model=self.settings.analysis_model,
                         reasoning_effort=self.settings.analysis_reasoning_effort,
+                        project_summary=result.summary,
+                        assumptions=result.assumptions,
+                        warnings=result.warnings,
+                        project_facts=[fact.model_dump(mode="json") for fact in result.facts],
                     )
                 except Exception as error:
                     logger.warning(
