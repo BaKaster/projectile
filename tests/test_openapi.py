@@ -23,6 +23,8 @@ def test_chat_and_question_endpoints_are_exposed() -> None:
     assert "get" in paths["/api/v1/chats"]
     assert "post" in paths["/api/v1/chats"]
     assert "get" in paths["/api/v1/chats/{chat_id}"]
+    assert "patch" in paths["/api/v1/chats/{chat_id}"]
+    assert "delete" in paths["/api/v1/chats/{chat_id}"]
     assert "post" in paths["/api/v1/chats/{chat_id}/messages"]
     assert "post" in paths[
         "/api/v1/projects/{project_id}/analysis-runs/{run_id}/answers"
@@ -34,6 +36,13 @@ def test_chat_and_question_endpoints_are_exposed() -> None:
         "/api/v1/projects/{project_id}/analysis-runs/{run_id}/report.pdf"
     ]["get"]
     assert "application/pdf" in pdf["responses"]["200"]["content"]
+    xlsx = paths[
+        "/api/v1/projects/{project_id}/analysis-runs/{run_id}/report.xlsx"
+    ]["get"]
+    assert (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        in xlsx["responses"]["200"]["content"]
+    )
 
 
 def test_stage_plan_endpoint_has_typed_contract() -> None:

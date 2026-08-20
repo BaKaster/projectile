@@ -3,20 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#ffffff" />
-    <title>Projectile — AI-анализ проектов</title>
+    <meta name="theme-color" content="#121239" />
+    <title>Projectile — MONSters</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-top">
-          <a class="brand" href="./">
-            <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M7 29.5 24.5 6 33 14.5 9.5 32Z"/><path class="cut" d="m9.5 32 8-11 4 4-12 7Z"/></svg>
-            <span>Projectile</span>
+          <a class="brand" href="./" aria-label="Projectile, проект команды MONSters">
+            <img src="./assets/projectile-mascot-transparent.png" alt="" width="48" height="48" />
+            <span class="brand-lockup"><b>Projectile</b><small>by <span>MONSters</span></small></span>
           </a>
           <button class="icon-button mobile-close" id="close-sidebar" aria-label="Закрыть меню">×</button>
         </div>
@@ -24,10 +24,6 @@
         <div class="history-label">История</div>
         <nav class="chat-history" id="chat-history" aria-label="История чатов"></nav>
         <div class="sidebar-footer">
-          <div class="api-status">
-            <span class="status-dot" id="status-dot"></span>
-            <span id="api-label">Подключение к API…</span>
-          </div>
           <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Включить тёмную тему" aria-pressed="false">
             <svg class="theme-icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2.2M12 19.8V22M4.9 4.9l1.6 1.6m11 11 1.6 1.6M2 12h2.2M19.8 12H22M4.9 19.1l1.6-1.6m11-11 1.6-1.6"/></svg>
             <svg class="theme-icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></svg>
@@ -48,15 +44,10 @@
 
         <section class="conversation" id="conversation" aria-live="polite">
           <div class="empty-state" id="empty-state">
-            <div class="orb"><span></span></div>
-            <p class="eyebrow">PROJECT INTELLIGENCE</p>
-            <h1>Что нужно оценить?</h1>
-            <p class="empty-copy">Опишите проект своими словами или приложите документы. Я определю тип проекта, соберу факты, риски и вопросы для оценки.</p>
-            <div class="suggestions">
-              <button type="button" data-prompt="Проанализируй проект внедрения CRM и выдели основные риски">Внедрение CRM <span>→</span></button>
-              <button type="button" data-prompt="Оцени полноту требований и найди пробелы, влияющие на оценку">Проверить требования <span>→</span></button>
-              <button type="button" data-prompt="Определи тип проекта и подготовь вопросы для предварительной оценки">Определить тип проекта <span>→</span></button>
-            </div>
+            <div class="orb"><img src="./assets/projectile-mascot-transparent.png" alt="" /></div>
+            <p class="eyebrow"><span>//</span> PROJECT INTELLIGENCE</p>
+            <h1>От документов<br />к точной оценке<span>.</span></h1>
+            <p class="empty-copy">Опишите проект своими словами или приложите документы. Система определит тип проекта, соберёт факты, риски и вопросы для оценки.</p>
           </div>
         </section>
 
@@ -76,7 +67,7 @@
             </button>
             <input id="file-input" type="file" multiple hidden />
           </form>
-          <p class="disclaimer">Projectile может ошибаться. Проверяйте существенные выводы перед оценкой.</p>
+          <p class="disclaimer">AI-помощник может ошибаться. Проверяйте существенные выводы перед оценкой.</p>
         </div>
       </main>
     </div>

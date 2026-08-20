@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ApiError,
+  analysisExcelUrl,
   analysisReportUrl,
   buildUploadFormData,
   createProject,
   createChat,
+  deleteChat,
   getLatestAnalysis,
   sendChatMessage,
   answerAnalysisQuestions,
   skipAnalysisQuestions,
+  updateChat,
   uploadDocuments,
 } from "../api.js";
 
@@ -22,6 +25,13 @@ test("analysis report URL carries the selected visual theme", () => {
   assert.equal(
     analysisReportUrl(base, "project", "run", "unknown"),
     `${base}/api/v1/projects/project/analysis-runs/run/report.pdf?theme=light`,
+  );
+});
+
+test("Excel report URL targets the completed analysis", () => {
+  assert.equal(
+    analysisExcelUrl("http://localhost:8000", "project", "run"),
+    "http://localhost:8000/api/v1/projects/project/analysis-runs/run/report.xlsx",
   );
 });
 
@@ -84,7 +94,7 @@ test("latest analysis exposes a 404 as ApiError for restoration logic", async (c
   );
 });
 
-test("chat messages, answers and skip use their explicit endpoints", async (context) => {
+test("chat lifecycle, messages, answers and skip use their explicit endpoints", async (context) => {
   const calls = [];
   context.mock.method(globalThis, "fetch", async (url, options) => {
     calls.push({ url, options });
@@ -92,12 +102,17 @@ test("chat messages, answers and skip use their explicit endpoints", async (cont
   });
 
   await createChat("http://localhost:8000", "Новый проект");
+  await updateChat("http://localhost:8000", "chat-id", "Новое название");
   await sendChatMessage("http://localhost:8000", "chat-id", "Оцени проект");
   await answerAnalysisQuestions("http://localhost:8000", "chat-id", "run-id", "Срок — декабрь");
   await skipAnalysisQuestions("http://localhost:8000", "chat-id", "run-id");
+  await deleteChat("http://localhost:8000", "chat-id");
 
   assert.equal(calls[0].url, "http://localhost:8000/api/v1/chats");
-  assert.equal(calls[1].url, "http://localhost:8000/api/v1/chats/chat-id/messages");
-  assert.equal(calls[2].url, "http://localhost:8000/api/v1/projects/chat-id/analysis-runs/run-id/answers");
-  assert.equal(calls[3].url, "http://localhost:8000/api/v1/projects/chat-id/analysis-runs/run-id/questions/skip");
+  assert.equal(calls[1].url, "http://localhost:8000/api/v1/chats/chat-id");
+  assert.equal(calls[1].options.method, "PATCH");
+  assert.equal(calls[2].url, "http://localhost:8000/api/v1/chats/chat-id/messages");
+  assert.equal(calls[3].url, "http://localhost:8000/api/v1/projects/chat-id/analysis-runs/run-id/answers");
+  assert.equal(calls[4].url, "http://localhost:8000/api/v1/projects/chat-id/analysis-runs/run-id/questions/skip");
+  assert.equal(calls[5].options.method, "DELETE");
 });
