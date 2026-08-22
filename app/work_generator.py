@@ -561,6 +561,18 @@ class WorkGenerator:
             fact_tokens = self._tokens(f"{fact.name} {fact.value}")
             score = len(target_tokens & fact_tokens)
             if score:
+                # Quantified capacity drivers are more useful to estimation
+                # than verbose descriptive facts and must survive the top-3
+                # evidence limit.
+                if re.search(
+                    r"\d+(?:[.,]\d+)?\s*(?:"
+                    r"объект|площад|оборудован|сервер|систем|сервис|компонент|"
+                    r"подсистем|актив|конфигурац|обращен|заявк|rfc|ке\b|ci\b"
+                    r")",
+                    fact.value,
+                    re.IGNORECASE,
+                ):
+                    score += 100
                 scored.append((score, -index, fact))
         scored.sort(reverse=True, key=lambda row: (row[0], row[1]))
         return [row[2] for row in scored[:3]]

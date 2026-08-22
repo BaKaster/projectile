@@ -46,6 +46,10 @@ class ModelAnalysis(BaseModel):
     project_name: str | None = Field(default=None, min_length=1, max_length=120)
     project_type_code: str | None = None
     confidence: Confidence
+    lifecycle_state: Literal["new_solution", "existing_solution", "mixed", "unknown"] = "unknown"
+    delivery_intent: Literal[
+        "support", "change", "implementation", "integration", "audit", "mixed", "unknown"
+    ] = "unknown"
     summary: str = Field(min_length=1)
     rationale: str = Field(min_length=1)
     facts: list[ExtractedFact] = Field(default_factory=list)

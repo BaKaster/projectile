@@ -566,10 +566,16 @@ class ExcelEstimateService:
 
     @staticmethod
     def _validate_template_compatibility(package: _WorkbookPackage) -> None:
-        expected = (
-            "IF(ISNUMBER(MATCH('Ввод'!$B$5,"
-            "'Справочник типов'!$A$2:$A$27,0)),1,0)"
-        )
+        expected = {
+            (
+                "IF(ISNUMBER(MATCH('Ввод'!$B$5,"
+                "'Справочник типов'!$A$2:$A$27,0)),1,0)"
+            ),
+            (
+                "IF(ISNUMBER(MATCH(Ввод!$B$5,"
+                "'Справочник типов'!$A$2:$A$27,0)),1,0)"
+            ),
+        }
         actual = next(
             (
                 formula
@@ -578,7 +584,7 @@ class ExcelEstimateService:
             ),
             None,
         )
-        if actual != expected:
+        if actual not in expected:
             raise ExcelEstimateError(
                 "Excel template is incompatible: Проверки!B6 must use the "
                 "cross-engine MATCH formula"
@@ -654,7 +660,22 @@ class ExcelEstimateService:
         ]
         model_status = "FAIL" if not recognized or "FAIL" in statuses else "PASS"
         package.write_formula_cached_value("Проверки", "B3", model_status)
-        package.write_formula_cached_value("Итого по проекту", "B11", model_status)
+        summary_status_cell = next(
+            (
+                cell
+                for sheet, cell, formula in package.formula_fingerprint()
+                if sheet == "Итого по проекту"
+                and formula.replace("'", "") == "Проверки!$B$3"
+            ),
+            None,
+        )
+        if summary_status_cell is None:
+            raise ExcelEstimateError(
+                "Excel template is incompatible: summary status formula is missing"
+            )
+        package.write_formula_cached_value(
+            "Итого по проекту", summary_status_cell, model_status
+        )
 
     def _resolve_parameters(self, payload: ExcelEstimateRequest) -> dict[int, Any]:
         definitions = self.parameter_definitions(payload.project_type_code)

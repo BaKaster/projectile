@@ -8,12 +8,27 @@ range, hourly rates, and financial totals.
 
 1. A keyword profile selects an initial role mix and a calibration baseline.
 2. Confirmed signals apply catalogued multipliers.
-3. Numeric values from facts attached by the work generator scale the relevant work logarithmically and are
-   capped, so a raw object count cannot create an unbounded estimate.
-4. With `effort_mode=auto` and an OpenAI key, the model may refine role assignments and hours only for
-   existing `work_code` and catalogued `role_code` values, and only inside the deterministic uncertainty range.
+3. Only explicit capacity quantities attached to the relevant work scale effort logarithmically: managed
+   services/components, systems, sites, assets, configurations, or request/RFC volume. Durations and quality
+   targets such as `15 minutes`, `4 hours`, `99.9%`, RTO/RPO, and telemetry cardinality do not scale recurring
+   capacity. This prevents an SLA or a count of metrics from being mistaken for headcount.
+4. With `effort_mode=auto` and an OpenAI key, the model selects only the supported `work_code` values and
+   identifies whether a work is one-time or monthly. The backend retains the catalogue role mix and effort
+   envelope; an LLM cannot create extra staffing from an unquantified description.
 5. Rates and amounts are always applied and calculated by backend code. If model refinement fails, the API
    returns the deterministic estimate and a warning.
+
+For an existing service with a confirmed change, the plan is deliberately mixed: `implement_point_change`
+is a one-time block and service-operation works are monthly blocks. A recurring change pool is included only
+when the source explicitly confirms a monthly RFC stream. Point integration does not imply discovery,
+architecture, security review, deployment, or a full implementation lifecycle.
+
+## Regression policy
+
+Accuracy is measured only against references with the same horizon, currency, and cost perimeter. Supplier
+quotes, licenses, hardware, missing role families, and mixed commercial totals remain useful coverage cases,
+but are marked non-comparable and excluded from accuracy percentages. Monthly, one-time, and annual values
+must be compared separately; the generated workbook total may legitimately combine them over a contract term.
 
 Baseline hours are priors for calibration, not claimed market averages. Production accuracy requires storing
 actual hours by `work_code`, role, and scope drivers, then periodically recalibrating profile baselines and

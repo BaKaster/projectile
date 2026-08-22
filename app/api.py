@@ -133,6 +133,7 @@ async def build_project_work_plan(
                     work_plan,
                     api_key=settings.openai_api_key.get_secret_value(),
                     model=settings.analysis_model,
+                    base_url=settings.analysis_base_url,
                     reasoning_effort=settings.analysis_reasoning_effort,
                 )
             except Exception:  # noqa: BLE001 - return a useful deterministic plan

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     project_work_templates_path: Path = Path("data/project-work-templates.json")
     role_effort_catalog_path: Path = Path("data/role-effort-catalog.json")
     excel_estimate_template_path: Path = Path(
-        "Универсальный_расчет_стоимости_MONSters_v2_шаблон_для_разработчиков.xlsx"
+        "Универсальный_расчет_стоимости_MONSters_v2_упрощенный.xlsx"
     )
     excel_recalculation_command: str | None = None
     excel_recalculation_timeout_seconds: int = Field(default=120, gt=0, le=600)
@@ -35,9 +35,14 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices(
-            "KEY_OPENAI", "OPENAI_API_KEY", "PROJECTILE_OPENAI_API_KEY"
+            "KEY_OPENAI",
+            "OPENAI_API_KEY",
+            "PROJECTILE_OPENAI_API_KEY",
+            "OpenR_API",
+            "OPENR_API",
         ),
     )
+    analysis_base_url: str | None = None
     analysis_model: str = "gpt-5.5"
     analysis_reasoning_effort: str = "high"
     analysis_ai_direct_estimation: bool = True

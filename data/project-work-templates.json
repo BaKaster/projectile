@@ -40,7 +40,8 @@
     {"code": "custom_development", "description": "Нужна разработка или доработка программного кода."},
     {"code": "onsite_work", "description": "Нужны выезды, монтаж или обследование на площадке."},
     {"code": "high_availability", "description": "Требуются кластеризация, резервирование или георезерв."},
-    {"code": "integration", "description": "Нужны интеграции с внешними системами."}
+    {"code": "integration", "description": "Нужны интеграции с внешними системами."},
+    {"code": "recurring_changes", "description": "Подтверждён регулярный месячный поток RFC/изменений, отдельный от разового внедрения."}
   ],
   "work_templates": [
     {
@@ -222,10 +223,11 @@
           {"code": "announce_service", "name": "Запустить коммуникации пользователям и владельцам услуг", "inclusion": "always", "outputs": ["Памятка и уведомление о запуске"], "estimation_drivers": ["аудитории", "каналы"], "evidence": "company"}
         ]},
         {"stage_code": "service_operation", "hours_basis": "В месяц", "works": [
-          {"code": "handle_incidents_requests", "name": "Принимать, регистрировать, классифицировать, диагностировать, решать и маршрутизировать обращения", "inclusion": "always", "outputs": ["Обработанные обращения", "История решений"], "estimation_drivers": ["обращения/мес", "сложность", "доля решения по линиям", "режим"], "evidence": "company"},
-          {"code": "perform_routine_operations", "name": "Выполнять регламентные проверки, обслуживание, обновления и администрирование", "inclusion": "always", "outputs": ["Журналы регламентных работ"], "estimation_drivers": ["КЕ", "регламенты", "частота"], "evidence": "company"},
-          {"code": "monitor_and_restore", "name": "Мониторить состояние, реагировать на события и выполнять аварийное восстановление", "inclusion": "always", "outputs": ["События и восстановленные сервисы"], "estimation_drivers": ["метрики", "события", "SLA", "дежурства"], "evidence": "company"},
-          {"code": "fulfill_changes", "name": "Анализировать, планировать, тестировать и внедрять запросы на изменения", "inclusion": "conditional", "signals": ["custom_development", "installation"], "outputs": ["Выполненные RFC"], "estimation_drivers": ["RFC", "сложность", "окна"], "evidence": "company"},
+          {"code": "handle_incidents_requests", "name": "Принимать, регистрировать, классифицировать, диагностировать, решать и маршрутизировать обращения", "inclusion": "always", "outputs": ["Обработанные обращения", "История решений"], "estimation_drivers": ["обращения/мес", "поддерживаемые сервисы", "сложность", "доля решения по линиям", "режим"], "evidence": "company"},
+          {"code": "perform_routine_operations", "name": "Выполнять регламентные проверки, обслуживание, обновления и администрирование", "inclusion": "always", "outputs": ["Журналы регламентных работ"], "estimation_drivers": ["КЕ", "поддерживаемые сервисы", "управляемые компоненты", "регламенты", "частота"], "evidence": "company"},
+          {"code": "monitor_and_restore", "name": "Мониторить состояние, реагировать на события и выполнять аварийное восстановление", "inclusion": "always", "outputs": ["События и восстановленные сервисы"], "estimation_drivers": ["метрики", "события", "SLA", "дежурства", "поддерживаемые сервисы", "управляемые компоненты"], "evidence": "company"},
+          {"code": "implement_point_change", "name": "Реализовать и проверить одно подтверждённое изменение или интеграцию существующего сервиса", "inclusion": "conditional", "signals": ["custom_development", "installation", "integration"], "outputs": ["Реализованное изменение", "Протокол проверки"], "estimation_drivers": ["изменения", "интеграции", "компоненты", "критерии приёмки"], "evidence": "company", "hours_basis": "Всего"},
+          {"code": "fulfill_changes", "name": "Анализировать, планировать, тестировать и внедрять регулярные запросы на изменения", "inclusion": "conditional", "signals": ["recurring_changes"], "outputs": ["Выполненные RFC"], "estimation_drivers": ["RFC/мес", "сложность", "окна"], "evidence": "company"},
           {"code": "manage_vendor_cases", "name": "Регистрировать и сопровождать обращения к вендору", "inclusion": "conditional", "signals": ["vendor_support"], "outputs": ["Вендорские кейсы"], "estimation_drivers": ["кейсы", "вендоры"], "evidence": "company"}
         ]},
         {"stage_code": "service_improvement", "hours_basis": "В месяц", "works": [

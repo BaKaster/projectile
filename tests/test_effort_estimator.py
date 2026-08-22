@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from app.effort_estimator import (
-    AIAssignment,
     AIDirectEstimationResult,
+    AIScopeReviewResult,
     AIWorkEstimate,
     AdaptiveEffortEstimator,
 )
@@ -121,6 +121,84 @@ def test_scope_boundaries_scale_asset_work_but_not_unrelated_reporting() -> None
     ).effort_hours
 
 
+def test_telemetry_metric_count_does_not_scale_monthly_monitoring_capacity() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan(
+        "SUP_App_Support", StagePlanContext(include_candidates=False)
+    )
+    baseline = estimator.estimate(generator.generate(stage_plan, WorkPlanContext()))
+    with_metrics = estimator.estimate(
+        generator.generate(
+            stage_plan,
+            WorkPlanContext(
+                facts=[
+                    WorkFact(
+                        name="Объём метрик мониторинга",
+                        value="24 метрики",
+                        source_document_ids=["brief"],
+                    )
+                ]
+            ),
+        )
+    )
+
+    code = "service_operation.monitor_and_restore"
+    assert _work(with_metrics, code).effort_hours == _work(baseline, code).effort_hours
+
+
+def test_sla_duration_does_not_scale_incident_capacity() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan(
+        "SUP_App_Support", StagePlanContext(include_candidates=False)
+    )
+    baseline = estimator.estimate(generator.generate(stage_plan, WorkPlanContext()))
+    with_sla = estimator.estimate(
+        generator.generate(
+            stage_plan,
+            WorkPlanContext(
+                facts=[
+                    WorkFact(
+                        name="SLA по критичным обращениям",
+                        value="Реакция 15 минут, решение 4 часа",
+                        source_document_ids=["brief"],
+                    )
+                ]
+            ),
+        )
+    )
+
+    code = "service_operation.handle_incidents_requests"
+    assert _work(with_sla, code).effort_hours == _work(baseline, code).effort_hours
+
+
+def test_managed_component_count_scales_recurring_operations() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan(
+        "SUP_App_Support", StagePlanContext(include_candidates=False)
+    )
+    baseline = estimator.estimate(generator.generate(stage_plan, WorkPlanContext()))
+    scoped = estimator.estimate(
+        generator.generate(
+            stage_plan,
+            WorkPlanContext(
+                facts=[
+                    WorkFact(
+                        name="Состав управляемых компонентов",
+                        value="5 компонентов",
+                        source_document_ids=["brief"],
+                    )
+                ]
+            ),
+        )
+    )
+
+    for code in (
+        "service_operation.perform_routine_operations",
+        "service_operation.monitor_and_restore",
+    ):
+        assert _work(scoped, code).effort_hours > _work(baseline, code).effort_hours
+
+
 def test_security_work_uses_security_catalog_role() -> None:
     planner, generator, estimator = _dependencies()
     stage_plan = planner.build_plan(
@@ -153,7 +231,7 @@ def test_support_projects_cannot_receive_security_roles() -> None:
     assert not any(code.startswith("security_") for code in assigned)
 
 
-def test_direct_ai_plan_selects_its_own_scope_roles_and_hours() -> None:
+def test_direct_ai_plan_selects_scope_but_keeps_catalogue_roles_and_hours() -> None:
     planner, generator, estimator = _dependencies()
     stage_plan = planner.build_plan("SUP_L1", StagePlanContext(include_candidates=False))
     candidate = generator.generate(stage_plan, WorkPlanContext())
@@ -166,38 +244,28 @@ def test_direct_ai_plan_selects_its_own_scope_roles_and_hours() -> None:
                 AIWorkEstimate(
                     work_code=selected.work_code,
                     rationale="Работа прямо следует из подтверждённого объёма поддержки.",
-                    assignments=[
-                        AIAssignment(
-                            role_code="support_l1",
-                            effort_hours=7.25,
-                            responsibility="Приём и первичная обработка обращений",
-                        ),
-                        AIAssignment(
-                            role_code="support_supervisor",
-                            effort_hours=1.25,
-                            responsibility="Контроль качества обслуживания",
-                        ),
-                    ],
+                    evidence=["ТЗ прямо требует приём и обработку обращений."],
+                    hours_basis="В месяц",
                 )
             ],
             scope_risks=["Не указан фактический поток обращений."],
         ),
     )
 
-    assert result.estimation_mode == "not_estimated"
+    expected = _work(estimator.estimate(candidate), selected.work_code)
+    assert result.estimation_mode == "deterministic"
     assert [work.work_code for package in result.packages for work in package.works] == [
         selected.work_code
     ]
     work = _work(result, selected.work_code)
-    assert work.estimate_method == "expert"
-    assert work.effort_hours == 8.5
-    assert {item.role_code for item in work.role_assignments} == {
-        "support_l1",
-        "support_supervisor",
-    }
+    assert work.estimate_method == expected.estimate_method
+    assert work.effort_hours == expected.effort_hours
+    assert [item.role_code for item in work.role_assignments] == [
+        item.role_code for item in expected.role_assignments
+    ]
 
 
-def test_direct_ai_plan_rejects_unknown_catalogue_work_or_role() -> None:
+def test_direct_ai_plan_rejects_unknown_catalogue_work() -> None:
     planner, generator, estimator = _dependencies()
     stage_plan = planner.build_plan("SUP_L1", StagePlanContext(include_candidates=False))
     candidate = generator.generate(stage_plan, WorkPlanContext())
@@ -210,14 +278,43 @@ def test_direct_ai_plan_rejects_unknown_catalogue_work_or_role() -> None:
                     AIWorkEstimate(
                         work_code="invented.work",
                         rationale="Не должно быть принято.",
-                        assignments=[
-                            AIAssignment(
-                                role_code="support_l1",
-                                effort_hours=1,
-                                responsibility="Тест",
-                            )
-                        ],
+                        evidence=["Тестовая строка."],
+                        hours_basis="Всего",
                     )
                 ]
             ),
         )
+
+
+def test_scope_review_removes_work_not_supported_by_evidence() -> None:
+    planner, generator, estimator = _dependencies()
+    stage_plan = planner.build_plan("SUP_L1", StagePlanContext(include_candidates=False))
+    candidate = generator.generate(stage_plan, WorkPlanContext())
+    works = [work for package in candidate.packages for work in package.works]
+    assert len(works) >= 2
+    proposal = AIDirectEstimationResult(
+        works=[
+            AIWorkEstimate(
+                work_code=work.work_code,
+                rationale="Черновой вариант.",
+                evidence=["Факт из ТЗ."],
+                hours_basis="В месяц",
+            )
+            for work in works[:2]
+        ]
+    )
+    result = estimator._apply_direct_ai_plan(
+        candidate,
+        proposal,
+        AIScopeReviewResult(
+            lifecycle_state="existing_solution",
+            delivery_intent="support",
+            approved_work_codes=[works[0].work_code],
+            rejected_scope_risks=["Вторая работа не подтверждена ТЗ."],
+            review_rationale="Оставлена только подтверждённая работа поддержки.",
+        ),
+    )
+
+    assert [work.work_code for package in result.packages for work in package.works] == [
+        works[0].work_code
+    ]

@@ -234,3 +234,51 @@ def test_support_lifecycle_separates_one_time_and_monthly_work(
     assert by_stage["service_operation"] == {"В месяц"}
     assert by_stage["service_improvement"] == {"В месяц"}
     assert by_stage["service_governance"] == {"В месяц"}
+
+
+def test_application_support_exposes_point_change_for_integration_signal(
+    planner: StagePlanner, generator: WorkGenerator
+) -> None:
+    stage_plan = planner.build_plan(
+        "SUP_App_Support",
+        StagePlanContext(include_candidates=False),
+    )
+    plan = generator.generate(
+        stage_plan,
+        WorkPlanContext(signals=["integration"], scope_mode="baseline"),
+    )
+    change = next(
+        work
+        for package in plan.packages
+        for work in package.works
+        if work.work_code == "service_operation.implement_point_change"
+    )
+    assert change.hours_basis == "Всего"
+    assert not any(
+        work.work_code == "service_operation.fulfill_changes"
+        for package in plan.packages
+        for work in package.works
+    )
+
+
+def test_quantified_capacity_fact_is_retained_in_limited_work_context(
+    generator: WorkGenerator,
+) -> None:
+    facts = [
+        WorkFact(
+            name=f"Описание поддерживаемого сервиса {index}",
+            value="Подробное описание эксплуатации сервиса без количественного объёма.",
+            source_document_ids=["brief"],
+        )
+        for index in range(4)
+    ]
+    capacity = WorkFact(
+        name="Объём поддерживаемых сервисов",
+        value="2 сервиса",
+        source_document_ids=["brief"],
+    )
+    relevant = generator._relevant_facts(
+        [*facts, capacity], ["поддерживаемые сервисы"]
+    )
+
+    assert capacity in relevant

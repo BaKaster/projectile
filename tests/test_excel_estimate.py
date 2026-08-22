@@ -19,7 +19,7 @@ from app.models import AnalysisRun, Project, ProjectAnalysis
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = (
-    ROOT / "Универсальный_расчет_стоимости_MONSters_v2_шаблон_для_разработчиков.xlsx"
+    ROOT / "Универсальный_расчет_стоимости_MONSters_v2_упрощенный.xlsx"
 )
 ROLE_CATALOG = ROOT / "data" / "role-effort-catalog.json"
 

@@ -1,5 +1,6 @@
-from app.analysis_contracts import ModelAnalysis
-from app.analyzer import _apply_classification_guardrails
+from app.analysis_contracts import ExtractedFact, ModelAnalysis
+from app.analysis_worker import _uses_managed_service_catalog
+from app.analyzer import _add_derived_capacity_facts, _apply_classification_guardrails
 
 
 ALLOWED = {
@@ -31,6 +32,41 @@ def test_new_functionality_is_not_application_support() -> None:
     result = _analysis("SUP_App_Support", "Создание нового отчёта и разработка интеграции")
     _apply_classification_guardrails(result, ALLOWED)
     assert result.project_type_code == "SUP_IT_Implementation"
+
+
+def test_existing_service_with_integration_uses_mixed_service_catalog() -> None:
+    assert _uses_managed_service_catalog(
+        "existing_solution", "integration", "SUP_IT_Implementation"
+    )
+    assert _uses_managed_service_catalog(
+        "mixed", "mixed", "SUP_IT_Implementation"
+    )
+    assert not _uses_managed_service_catalog(
+        "new_solution", "implementation", "SUP_IT_Implementation"
+    )
+
+
+def test_separate_supported_service_facts_produce_numeric_capacity_driver() -> None:
+    result = _analysis("SUP_App_Support", "Поддержка двух существующих сервисов")
+    result.facts = [
+        ExtractedFact(
+            name="Состав сервиса терминального доступа",
+            value="Эксплуатация и решение инцидентов.",
+            source_document_ids=["terminal"],
+        ),
+        ExtractedFact(
+            name="Сервис 1С входит в поддержку",
+            value="Эксплуатация и решение инцидентов.",
+            source_document_ids=["1c"],
+        ),
+    ]
+
+    _add_derived_capacity_facts(result)
+
+    capacity = result.facts[-1]
+    assert capacity.name == "Объём поддерживаемых сервисов"
+    assert capacity.value == "2 сервиса"
+    assert capacity.source_document_ids == ["1c", "terminal"]
 
 
 def test_cloud_is_only_a_placement_attribute_for_new_office() -> None:

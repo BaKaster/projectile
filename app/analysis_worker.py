@@ -40,6 +40,17 @@ from app.work_generator import WorkGenerator
 logger = logging.getLogger(__name__)
 
 
+def _uses_managed_service_catalog(
+    lifecycle_state: str, delivery_intent: str, project_type_code: str
+) -> bool:
+    return (
+        lifecycle_state in {"existing_solution", "mixed"}
+        and delivery_intent in {"support", "change", "integration", "mixed"}
+        and project_type_code.startswith("SUP_")
+        and project_type_code != "SUP_App_Support"
+    )
+
+
 def _clean_project_name(value: str | None, fallback: str) -> str:
     normalized = " ".join((value or "").split()).strip(" ._-—")
     if not normalized or normalized.casefold() in {
@@ -185,6 +196,7 @@ class AnalysisWorker:
             digest_concurrency=self.settings.analysis_digest_concurrency,
             signal_descriptions=self.work_generator.signal_descriptions(),
             reasoning_effort=self.settings.analysis_reasoning_effort,
+            base_url=self.settings.analysis_base_url,
         )
         analyzer_output = await analyzer.analyze(
             catalog_for_prompt(catalog_rows),
@@ -246,6 +258,22 @@ class AnalysisWorker:
                     "Проигнорированы неизвестные сигналы этапов: "
                     + ", ".join(ignored_signals)
                 )
+            # Existing services use the managed-support catalogue even when
+            # the request also contains a point change or integration.  That
+            # catalogue can represent both one-time and monthly work without
+            # expanding one change into a full implementation lifecycle.
+            managed_service_routing = _uses_managed_service_catalog(
+                result.lifecycle_state,
+                result.delivery_intent,
+                result.project_type_code,
+            )
+            if managed_service_routing:
+                result.warnings.append(
+                    "Кандидатный каталог работ выбран по состоянию существующего сервиса: "
+                    "разовые изменения и регулярная поддержка оцениваются раздельно, "
+                    "без автоматического расширения до полного внедрения."
+                )
+                result.project_type_code = "SUP_App_Support"
             baseline_stage_plan = self.stage_planner.build_plan(
                 result.project_type_code,
                 StagePlanContext(
@@ -292,7 +320,16 @@ class AnalysisWorker:
             selected_stage_codes = stage_plan.selected_stage_codes
             source_document_ids = {source.document_id for source in sources}
             project_specific_works = []
-            for work in result.project_specific_works:
+            if managed_service_routing and result.project_specific_works:
+                result.warnings.append(
+                    "Проектно-специфичные AI-работы заменены канонической работой "
+                    "точечного изменения: это исключает дубли интеграции и сохраняет "
+                    "калибруемый work_code."
+                )
+            proposed_specific_works = (
+                [] if managed_service_routing else result.project_specific_works
+            )
+            for work in proposed_specific_works:
                 if work.stage_code not in selected_stage_codes:
                     result.warnings.append(
                         "Проектно-специфичная работа проигнорирована: этап "
@@ -364,6 +401,7 @@ class AnalysisWorker:
                         work_plan,
                         api_key=self.settings.openai_api_key.get_secret_value(),
                         model=self.settings.analysis_model,
+                        base_url=self.settings.analysis_base_url,
                         reasoning_effort=self.settings.analysis_reasoning_effort,
                         project_summary=result.summary,
                         assumptions=result.assumptions,
