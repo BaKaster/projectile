@@ -12,12 +12,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.analysis_contracts import material_questions
 from app.analyzer import (
     PROMPT_VERSION,
-    OpenAIProjectAnalyzer,
+    CodexProjectAnalyzer,
     SourceText,
     catalog_for_prompt,
 )
 from app.config import Settings
-from app.effort_estimator import AdaptiveEffortEstimator
+from app.effort_estimator import AdaptiveEffortEstimator, infer_contract_term
 from app.models import (
     AnalysisRun,
     Document,
@@ -45,9 +45,16 @@ def _uses_managed_service_catalog(
 ) -> bool:
     return (
         lifecycle_state in {"existing_solution", "mixed"}
-        and delivery_intent in {"support", "change", "integration", "mixed"}
-        and project_type_code.startswith("SUP_")
-        and project_type_code != "SUP_App_Support"
+        and delivery_intent == "support"
+        and project_type_code
+        in {
+            "SUP_Complex",
+            "SUP_L1",
+            "SUP_L2",
+            "SUP_L3_HW",
+            "SUP_L3_SW",
+            "SUP_SUPPLIER",
+        }
     )
 
 
@@ -175,11 +182,6 @@ class AnalysisWorker:
 
         if not sources:
             raise RuntimeError("Ни из одного файла не удалось получить текст")
-        if self.settings.openai_api_key is None:
-            raise RuntimeError(
-                "Не задан KEY_OPENAI, OPENAI_API_KEY или PROJECTILE_OPENAI_API_KEY"
-            )
-
         async with self.session_factory.begin() as session:
             run = await session.get(AnalysisRun, run_id, with_for_update=True)
             if run is None:
@@ -189,14 +191,15 @@ class AnalysisWorker:
             finalize_without_questions = run.question_policy == "final_after_answers"
             catalog_rows = (await session.scalars(select(ProjectType))).all()
 
-        analyzer = OpenAIProjectAnalyzer(
-            api_key=self.settings.openai_api_key.get_secret_value(),
+        analyzer = CodexProjectAnalyzer(
             model=self.settings.analysis_model,
             max_input_characters=self.settings.analysis_max_input_characters,
             digest_concurrency=self.settings.analysis_digest_concurrency,
             signal_descriptions=self.work_generator.signal_descriptions(),
             reasoning_effort=self.settings.analysis_reasoning_effort,
-            base_url=self.settings.analysis_base_url,
+            codex_cli=self.settings.codex_cli,
+            codex_timeout_seconds=self.settings.codex_timeout_seconds,
+            codex_auth_file=self.settings.codex_auth_file,
         )
         analyzer_output = await analyzer.analyze(
             catalog_for_prompt(catalog_rows),
@@ -395,14 +398,21 @@ class AnalysisWorker:
                         scope_mode="baseline",
                     ),
                 )
+            contract_months, contract_evidence = infer_contract_term(
+                result.summary,
+                [fact.model_dump(mode="json") for fact in result.facts],
+            )
+            work_plan.contract_months = contract_months
+            work_plan.contract_months_evidence = contract_evidence
             if self.settings.analysis_ai_direct_estimation:
                 try:
                     work_plan = await self.effort_estimator.plan_with_ai(
                         work_plan,
-                        api_key=self.settings.openai_api_key.get_secret_value(),
                         model=self.settings.analysis_model,
-                        base_url=self.settings.analysis_base_url,
                         reasoning_effort=self.settings.analysis_reasoning_effort,
+                        codex_cli=self.settings.codex_cli,
+                        codex_timeout_seconds=self.settings.codex_timeout_seconds,
+                        codex_auth_file=self.settings.codex_auth_file,
                         project_summary=result.summary,
                         assumptions=result.assumptions,
                         warnings=result.warnings,

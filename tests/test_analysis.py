@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.analysis_contracts import DataGap, material_questions
-from app.analyzer import OpenAIProjectAnalyzer, SourceText, _source_role
+from app.analyzer import CodexProjectAnalyzer, SourceText, _source_role
 from app.recognition import DocumentRecognizer, UnsafeArchiveError
 
 
@@ -131,7 +131,7 @@ def test_zip_is_recognized_and_path_traversal_is_rejected(tmp_path: Path) -> Non
 
 
 def test_model_input_has_document_ids_and_is_bounded() -> None:
-    analyzer = OpenAIProjectAnalyzer("not-used", "test-model", 10_100)
+    analyzer = CodexProjectAnalyzer("test-model", 10_100)
     document_id = str(uuid.uuid4())
     prompt = analyzer._build_input(
         [{"code": "SUP_L1", "name": "Поддержка"}],

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,19 +32,11 @@ class Settings(BaseSettings):
     auto_create_schema: bool = True
     analysis_worker_enabled: bool = True
     analysis_poll_interval_seconds: float = Field(default=1.0, gt=0)
-    openai_api_key: SecretStr | None = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "KEY_OPENAI",
-            "OPENAI_API_KEY",
-            "PROJECTILE_OPENAI_API_KEY",
-            "OpenR_API",
-            "OPENR_API",
-        ),
-    )
-    analysis_base_url: str | None = None
+    codex_cli: str = "codex"
+    codex_timeout_seconds: int = Field(default=300, gt=0, le=1800)
+    codex_auth_file: Path | None = None
     analysis_model: str = "gpt-5.5"
-    analysis_reasoning_effort: str = "high"
+    analysis_reasoning_effort: str = "medium"
     analysis_ai_direct_estimation: bool = True
     analysis_ai_effort_refinement: bool = True
     analysis_max_input_characters: int = Field(default=300_000, gt=10_000)

@@ -1,4 +1,9 @@
 # syntax=docker/dockerfile:1.7
+FROM node:22-slim AS codex-cli
+
+ARG CODEX_CLI_VERSION=0.149.0
+RUN npm install --global "@openai/codex@${CODEX_CLI_VERSION}"
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -6,6 +11,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
+
+COPY --from=codex-cli /usr/local/bin/node /usr/local/bin/node
+COPY --from=codex-cli /usr/local/bin/codex /usr/local/bin/codex
+COPY --from=codex-cli /usr/local/lib/node_modules/@openai/codex /usr/local/lib/node_modules/@openai/codex
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -39,10 +48,12 @@ COPY ["Универсальный_расчет_стоимости_MONSters_v2_у
 
 ENV HF_HOME=/home/appuser/.cache/huggingface
 
-RUN useradd --create-home --uid 10001 appuser \
-    && mkdir -p /app/storage /home/appuser/.cache \
+RUN rm -f /usr/local/bin/codex \
+    && ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
+    && useradd --create-home --uid 10001 appuser \
+    && mkdir -p /app/storage /home/appuser/.cache /home/appuser/.codex \
     && chown -R appuser:appuser /app \
-    && chown -R appuser:appuser /home/appuser/.cache
+    && chown -R appuser:appuser /home/appuser/.cache /home/appuser/.codex
 
 USER appuser
 

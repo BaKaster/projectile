@@ -355,8 +355,11 @@ Excel с сохранением формул, MPP-расписания, VSDX-с�
 приоритет над КП и внутренними расчётами, но противоречия между ними остаются в `issues`.
 
 Для принудительного повторного OCR/ASR передайте `{"force_reextract": true}`. По умолчанию
-используется сохранённый текст. Для смыслового анализа задайте `KEY_OPENAI` или
-`OPENAI_API_KEY`; название модели настраивается через `PROJECTILE_ANALYSIS_MODEL`.
+используется сохранённый текст. Смысловой анализ запускается через авторизованный
+Codex CLI (`codex exec`), без API-ключа. Проверьте авторизацию командой
+`codex login status`; название модели настраивается через `PROJECTILE_ANALYSIS_MODEL`.
+Для Docker укажите `PROJECTILE_CODEX_HOME` — путь к каталогу `~/.codex` на хосте
+(в Windows, например, `C:/Users/username/.codex`).
 
 Результаты замеров и оставшиеся ограничения описаны в
 [docs/performance-review.md](docs/performance-review.md).

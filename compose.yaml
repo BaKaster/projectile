@@ -35,7 +35,9 @@ services:
       PROJECTILE_MAX_UPLOAD_SIZE_BYTES: ${PROJECTILE_MAX_UPLOAD_SIZE_BYTES:-536870912}
       PROJECTILE_MAX_FILES_PER_REQUEST: ${PROJECTILE_MAX_FILES_PER_REQUEST:-1000}
       PROJECTILE_CORS_ORIGINS: ${PROJECTILE_CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
-      KEY_OPENAI: ${KEY_OPENAI:-}
+      PROJECTILE_CODEX_CLI: codex
+      PROJECTILE_CODEX_TIMEOUT_SECONDS: ${PROJECTILE_CODEX_TIMEOUT_SECONDS:-300}
+      PROJECTILE_CODEX_AUTH_FILE: /run/projectile-codex/auth.json
       PROJECTILE_ANALYSIS_MODEL: ${PROJECTILE_ANALYSIS_MODEL:-gpt-5.5}
       PROJECTILE_ANALYSIS_REASONING_EFFORT: ${PROJECTILE_ANALYSIS_REASONING_EFFORT:-high}
       PROJECTILE_ANALYSIS_AI_DIRECT_ESTIMATION: ${PROJECTILE_ANALYSIS_AI_DIRECT_ESTIMATION:-true}
@@ -49,6 +51,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - model_cache:/home/appuser/.cache
+      - "${PROJECTILE_CODEX_HOME:-${CODEX_HOME:-${USERPROFILE:-${HOME}}/.codex}}/auth.json:/run/projectile-codex/auth.json:ro"
     depends_on:
       db:
         condition: service_healthy

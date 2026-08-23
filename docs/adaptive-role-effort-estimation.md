@@ -6,16 +6,22 @@ range, hourly rates, and financial totals.
 
 ## Estimation policy
 
-1. A keyword profile selects an initial role mix and a calibration baseline.
-2. Confirmed signals apply catalogued multipliers.
-3. Only explicit capacity quantities attached to the relevant work scale effort logarithmically: managed
+1. A keyword profile creates a safe fallback role mix and a calibration prior.
+2. Confirmed signals apply catalogued multipliers to that fallback.
+3. Only explicit capacity quantities attached to the relevant work scale fallback effort logarithmically: managed
    services/components, systems, sites, assets, configurations, or request/RFC volume. Durations and quality
    targets such as `15 minutes`, `4 hours`, `99.9%`, RTO/RPO, and telemetry cardinality do not scale recurring
    capacity. This prevents an SLA or a count of metrics from being mistaken for headcount.
-4. With `effort_mode=auto` and an OpenAI key, the model selects only the supported `work_code` values and
-   identifies whether a work is one-time or monthly. The backend retains the catalogue role mix and effort
-   envelope; an LLM cannot create extra staffing from an unquantified description.
-5. Rates and amounts are always applied and calculated by backend code. If model refinement fails, the API
+4. With `effort_mode=auto` and an authenticated Codex CLI, the model selects supported `work_code` values,
+   assigns one or more allowed roles, estimates person-hours and uncertainty ranges, and identifies whether
+   work is one-time or monthly. It must provide document evidence; the stages in the result are inferred from
+   the approved works rather than forced by the catalogue template. Project-specific works created during fact
+   extraction participate in the same validation.
+5. The backend rejects unknown work or role codes, duplicate assignments, inconsistent hour totals, and plans
+   inconsistent hour totals, and empty resulting plans. It applies role rates and calculates all monetary amounts.
+6. If the source explicitly states a contract term, the plan exposes separate one-time, monthly, and
+   contract-total hours and amounts. Legacy `total_*` fields remain the unexpanded sum for compatibility.
+7. If AI planning or validation fails, the API
    returns the deterministic estimate and a warning.
 
 For an existing service with a confirmed change, the plan is deliberately mixed: `implement_point_change`

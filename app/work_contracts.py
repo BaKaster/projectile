@@ -120,6 +120,17 @@ class GeneratedWorkPlan(BaseModel):
     total_effort_hours: float | None = Field(default=None, ge=0)
     total_sale_amount_rub: float | None = Field(default=None, ge=0)
     total_cost_amount_rub: float | None = Field(default=None, ge=0)
+    contract_months: float | None = Field(default=None, gt=0, le=120)
+    contract_months_evidence: list[str] = Field(default_factory=list)
+    one_time_effort_hours: float | None = Field(default=None, ge=0)
+    monthly_effort_hours: float | None = Field(default=None, ge=0)
+    contract_total_effort_hours: float | None = Field(default=None, ge=0)
+    one_time_sale_amount_rub: float | None = Field(default=None, ge=0)
+    monthly_sale_amount_rub: float | None = Field(default=None, ge=0)
+    contract_total_sale_amount_rub: float | None = Field(default=None, ge=0)
+    one_time_cost_amount_rub: float | None = Field(default=None, ge=0)
+    monthly_cost_amount_rub: float | None = Field(default=None, ge=0)
+    contract_total_cost_amount_rub: float | None = Field(default=None, ge=0)
 
     def validate_against(
         self,

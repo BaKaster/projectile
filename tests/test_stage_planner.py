@@ -21,7 +21,7 @@ def planner() -> StagePlanner:
 
 
 def test_every_project_type_has_a_resolvable_profile(planner: StagePlanner) -> None:
-    assert len(planner.profile_codes()) == 26
+    assert len(planner.profile_codes()) == 27
     for code in planner.profile_codes():
         plan = planner.build_plan(code)
         assert plan.project_type_code == code

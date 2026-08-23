@@ -4,11 +4,16 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from openai import AsyncOpenAI
-
-from app.analysis_contracts import DigestBatch, DocumentDigest, ExtractedFact, ModelAnalysis
+from app.analysis_contracts import (
+    DigestBatch,
+    DocumentDigest,
+    ExtractedFact,
+    ModelAnalysis,
+)
+from app.codex_cli import CodexCliClient
 
 PROMPT_VERSION = "ai-first-evidence-scoped-10"
 
@@ -107,23 +112,27 @@ class AnalyzerOutput:
     document_digests: list[DocumentDigest]
 
 
-class OpenAIProjectAnalyzer:
+class CodexProjectAnalyzer:
     def __init__(
         self,
-        api_key: str,
         model: str,
         max_input_characters: int,
         digest_concurrency: int = 2,
         signal_descriptions: dict[str, str] | None = None,
-        reasoning_effort: str = "high",
-        base_url: str | None = None,
+        reasoning_effort: str = "medium",
+        codex_cli: str = "codex",
+        codex_timeout_seconds: int = 300,
+        codex_auth_file: Path | None = None,
     ) -> None:
-        client_options = {"base_url": base_url} if base_url else {}
-        self.client = AsyncOpenAI(api_key=api_key, **client_options)
-        self.model = model
+        self.client = CodexCliClient(
+            executable=codex_cli,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            timeout_seconds=codex_timeout_seconds,
+            auth_file=codex_auth_file,
+        )
         self.max_input_characters = max_input_characters
         self.digest_concurrency = digest_concurrency
-        self.reasoning_effort = reasoning_effort
         descriptions = signal_descriptions or {}
         signal_lines = "\n".join(
             f"- {code}: {description}"
@@ -158,9 +167,7 @@ class OpenAIProjectAnalyzer:
         else:
             sources_for_analysis = sources
         input_text = self._build_input(catalog, sources_for_analysis, work_catalog)
-        response = await self.client.responses.parse(
-            model=self.model,
-            reasoning={"effort": self.reasoning_effort},
+        response = await self.client.parse(
             input=[
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": input_text},
@@ -209,9 +216,7 @@ class OpenAIProjectAnalyzer:
                     f"{source.text}\n</document>"
                 )
             async with semaphore:
-                response = await self.client.responses.parse(
-                    model=self.model,
-                    reasoning={"effort": self.reasoning_effort},
+                response = await self.client.parse(
                     input=[
                         {"role": "system", "content": DIGEST_PROMPT},
                         {"role": "user", "content": "\n\n".join(blocks)},
@@ -395,12 +400,17 @@ def _apply_classification_guardrails(
         code == "SUP_App_Support"
         and any(item in text for item in creation_markers)
         and not any(item in text for item in operation_markers)
-        and "SUP_IT_Implementation" in allowed_codes
     ):
-        result.project_type_code = "SUP_IT_Implementation"
-        result.warnings.append(
-            "Тип скорректирован на внедрение: основной результат — новый функционал, а не регулярная поддержка."
+        target = (
+            "SUP_Custom_Development"
+            if "разработ" in text and "SUP_Custom_Development" in allowed_codes
+            else "SUP_IT_Implementation"
         )
+        if target in allowed_codes:
+            result.project_type_code = target
+            result.warnings.append(
+                "Тип скорректирован: основной результат — создание нового функционала, а не регулярная поддержка."
+            )
 
     if (
         code in {"SUP_Complex", "SUP_IT_Implementation"}

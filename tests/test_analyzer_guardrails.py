@@ -6,6 +6,7 @@ from app.analyzer import _add_derived_capacity_facts, _apply_classification_guar
 ALLOWED = {
     "SEC_Implementation",
     "SUP_IT_Implementation",
+    "SUP_Custom_Development",
     "SUP_App_Support",
     "SUP_Cloud_PaaS",
     "SUP_Complex",
@@ -31,16 +32,17 @@ def test_non_security_implementation_cannot_be_classified_as_sec() -> None:
 def test_new_functionality_is_not_application_support() -> None:
     result = _analysis("SUP_App_Support", "Создание нового отчёта и разработка интеграции")
     _apply_classification_guardrails(result, ALLOWED)
-    assert result.project_type_code == "SUP_IT_Implementation"
+    assert result.project_type_code == "SUP_Custom_Development"
 
 
 def test_existing_service_with_integration_uses_mixed_service_catalog() -> None:
-    assert _uses_managed_service_catalog(
+    assert not _uses_managed_service_catalog(
         "existing_solution", "integration", "SUP_IT_Implementation"
     )
-    assert _uses_managed_service_catalog(
+    assert not _uses_managed_service_catalog(
         "mixed", "mixed", "SUP_IT_Implementation"
     )
+    assert _uses_managed_service_catalog("existing_solution", "support", "SUP_L3_SW")
     assert not _uses_managed_service_catalog(
         "new_solution", "implementation", "SUP_IT_Implementation"
     )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.codex_cli import codex_cli_available
 from app.database import get_session
 from app.excel_estimate import (
     ExcelEstimateError,
@@ -82,6 +84,7 @@ SwaggerUploadFile = Annotated[
 ]
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 
 
@@ -126,17 +129,23 @@ async def build_project_work_plan(
         if (
             payload.effort_mode == "auto"
             and settings is not None
-            and settings.openai_api_key is not None
+            and codex_cli_available(settings.codex_cli, settings.codex_auth_file)
         ):
             try:
                 return await effort_estimator.plan_with_ai(
                     work_plan,
-                    api_key=settings.openai_api_key.get_secret_value(),
                     model=settings.analysis_model,
-                    base_url=settings.analysis_base_url,
                     reasoning_effort=settings.analysis_reasoning_effort,
+                    codex_cli=settings.codex_cli,
+                    codex_timeout_seconds=settings.codex_timeout_seconds,
+                    codex_auth_file=settings.codex_auth_file,
                 )
-            except Exception:  # noqa: BLE001 - return a useful deterministic plan
+            except Exception as error:  # noqa: BLE001 - return a useful deterministic plan
+                logger.warning(
+                    "AI work-plan validation failed; using deterministic fallback: %s",
+                    error,
+                    exc_info=True,
+                )
                 estimated = effort_estimator.estimate(work_plan)
                 estimated.warnings.append(
                     "Не удалось уточнить трудозатраты моделью; применена детерминированная оценка."
