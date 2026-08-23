@@ -32,6 +32,10 @@ def test_chat_and_question_endpoints_are_exposed() -> None:
     assert "post" in paths[
         "/api/v1/projects/{project_id}/analysis-runs/{run_id}/questions/skip"
     ]
+    assert "get" in paths["/api/v1/project-types"]
+    assert "patch" in paths[
+        "/api/v1/projects/{project_id}/analysis-runs/{run_id}/project-type"
+    ]
     pdf = paths[
         "/api/v1/projects/{project_id}/analysis-runs/{run_id}/report.pdf"
     ]["get"]

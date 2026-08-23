@@ -19,8 +19,9 @@ from app.models import AnalysisRun, Project, ProjectAnalysis
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = (
-    ROOT / "Универсальный_расчет_стоимости_MONSters_v2_упрощенный.xlsx"
+    ROOT / "Шаблон.xlsx"
 )
+LEGACY_TEMPLATE = ROOT / "Универсальный_расчет_стоимости_MONSters_v2_упрощенный.xlsx"
 ROLE_CATALOG = ROOT / "data" / "role-effort-catalog.json"
 
 
@@ -36,7 +37,7 @@ def _payload(**overrides) -> ExcelEstimateRequest:
         "estimate_date": "2026-08-20",
         "estimate_mode": "Уточнённая",
         "confidence": 0.85,
-        "vat_rate": 0.2,
+        "vat_rate": 0.22,
         "discount_rate": 0.05,
         "work_hours_per_day": 8,
         "planned_start_date": "2026-09-01",
@@ -104,34 +105,54 @@ def _payload(**overrides) -> ExcelEstimateRequest:
     return ExcelEstimateRequest.model_validate(data)
 
 
+def _cell_value(package: _WorkbookPackage, sheet: str, cell: str):
+    import re
+
+    match = re.fullmatch(r"([A-Z]+)(\d+)", cell)
+    assert match is not None
+    column = 0
+    for char in match.group(1):
+        column = column * 26 + ord(char) - ord("A") + 1
+    row = int(match.group(2))
+    return package.read_rows(sheet, row, row, column, column)[0][0]
+
+
 def test_build_populates_only_inputs_and_preserves_formulas(
     service: ExcelEstimateService,
 ) -> None:
-    before = _WorkbookPackage(TEMPLATE.read_bytes())
     output = service.build(_payload())
     after = _WorkbookPackage(output)
 
     assert output.startswith(b"PK")
-    assert after.formula_fingerprint() == before.formula_fingerprint()
+    assert after.formula_fingerprint() == service._template_formula_fingerprint
+    assert not any("#REF!" in formula for _, _, formula in after.formula_fingerprint())
+    assert after.read_rows("Проверки", 13, 13, 2, 5)[0] == [
+        1,
+        "Не применяется",
+        "Поле отсутствует в текущем шаблоне",
+        "PASS",
+    ]
     assert any(
         sheet == "Проверки" and cell == "B6" and "MATCH" in formula
         for sheet, cell, formula in after.formula_fingerprint()
     )
-    assert after.read_rows("Ввод", 4, 16, 2, 2) == [
-        ["Миграция платформы"],
-        ["SUP_IT_Implementation"],
-        [(date(2026, 8, 20) - date(1899, 12, 30)).days],
-        ["Уточнённая"],
-        [0.85],
-        [0.2],
-        [0.05],
-        [8],
-        [(date(2026, 9, 1) - date(1899, 12, 30)).days],
-        ["Авто"],
-        ["ТЗ v3"],
-        ["Доступы предоставляются до старта"],
-        [0.1],
-    ]
+    expected_general_values = {
+        "project_name": "Миграция платформы",
+        "project_type_code": "SUP_IT_Implementation",
+        "estimate_date": (date(2026, 8, 20) - date(1899, 12, 30)).days,
+        "estimate_mode": "Уточнённая",
+        "vat_rate": 0.22,
+        "discount_rate": 0.05,
+        "work_hours_per_day": 8,
+        "planned_start_date": (date(2026, 9, 1) - date(1899, 12, 30)).days,
+        "default_hours_basis": "Авто",
+        "source_or_spec_version": "ТЗ v3",
+        "main_assumption": "Доступы предоставляются до старта",
+        "commercial_reserve_rate": 0.1,
+    }
+    for field, expected in expected_general_values.items():
+        assert _cell_value(after, "Ввод", service._general_input_cells[field]) == expected
+    assert "confidence" not in service._general_input_cells
 
     work_rows = after.read_rows("Расчёт", 6, 8, 1, 22)
     assert work_rows[0][0:7] == [
@@ -170,12 +191,14 @@ def test_build_populates_only_inputs_and_preserves_formulas(
         None,
         None,
     ]
-    assert after.read_rows("Ввод", 36, 36, 1, 4)[0] == [
-        "Риск",
-        "Срок выдачи доступов не подтверждён",
-        "ТЗ v3",
-        "Возможен сдвиг старта",
-    ]
+    expected_assumption = {
+        "type": "Риск",
+        "text": "Срок выдачи доступов не подтверждён",
+        "source": "ТЗ v3",
+        "impact": "Возможен сдвиг старта",
+    }
+    for field, expected in expected_assumption.items():
+        assert _cell_value(after, "Ввод", service._assumption_input_cells[field][0]) == expected
 
 
 def test_dynamic_parameters_are_resolved_by_template_metadata(
@@ -185,14 +208,37 @@ def test_dynamic_parameters_are_resolved_by_template_metadata(
     package = _WorkbookPackage(output)
     definitions = service.parameter_definitions("SUP_IT_Implementation")
     values = {
-        definition.influence_code: package.read_rows(
-            "Ввод", 19 + definition.slot_number, 19 + definition.slot_number, 4, 4
-        )[0][0]
+        definition.influence_code: _cell_value(
+            package, "Ввод", service._parameter_input_cells[definition.slot_number]
+        )
         for definition in definitions
     }
     assert values["QTY"] == 12
     assert values["COMPLEXITY"] == 1.2
     assert values["RISK_PCT"] == 0.1
+
+
+def test_input_binding_follows_template_labels_instead_of_fixed_rows() -> None:
+    legacy = ExcelEstimateService(LEGACY_TEMPLATE, role_catalog_path=ROLE_CATALOG)
+    current = ExcelEstimateService(TEMPLATE, role_catalog_path=ROLE_CATALOG)
+
+    assert legacy._general_input_cells["vat_rate"] == "B9"
+    assert current._general_input_cells["vat_rate"] == "B8"
+    assert legacy._general_input_cells["commercial_reserve_rate"] == "B16"
+    assert current._general_input_cells["commercial_reserve_rate"] == "B15"
+    assert "confidence" in legacy._general_input_cells
+    assert "confidence" not in current._general_input_cells
+
+    for service in (legacy, current):
+        package = _WorkbookPackage(service.build(_payload()))
+        assert _cell_value(
+            package, "Ввод", service._general_input_cells["vat_rate"]
+        ) == pytest.approx(0.22)
+        assert _cell_value(
+            package,
+            "Ввод",
+            service._general_input_cells["commercial_reserve_rate"],
+        ) == pytest.approx(0.1)
 
 
 def test_rejects_unknown_roles_and_invalid_percent_parameters(
@@ -243,9 +289,7 @@ def test_unused_required_target_margin_gets_neutral_value(
         if item.influence_code == "TARGET_MARGIN"
     )
     assert (
-        package.read_rows(
-            "Ввод", 19 + margin.slot_number, 19 + margin.slot_number, 4, 4
-        )[0][0]
+        _cell_value(package, "Ввод", service._parameter_input_cells[margin.slot_number])
         == 0
     )
 

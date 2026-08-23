@@ -97,6 +97,7 @@ def test_codex_child_environment_excludes_application_secrets(
     monkeypatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("PROJECTILE_DATABASE_URL", "secret-database-url")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-never-reach-codex-cli")
     monkeypatch.setenv("PATH", "safe-path")
 
     environment = _codex_environment(tmp_path)
@@ -104,6 +105,7 @@ def test_codex_child_environment_excludes_application_secrets(
     assert environment["PATH"] == "safe-path"
     assert environment["CODEX_HOME"] == str(tmp_path)
     assert "PROJECTILE_DATABASE_URL" not in environment
+    assert "OPENAI_API_KEY" not in environment
 
 
 def test_codex_cli_available_checks_login_without_auth_file(

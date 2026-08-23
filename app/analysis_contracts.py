@@ -89,17 +89,17 @@ class MaterialQuestion(BaseModel):
     blocking: bool
 
 
-def material_questions(gaps: list[DataGap], limit: int = 5) -> list[MaterialQuestion]:
-    """Keep only questions whose answers can materially alter the estimate."""
+def material_questions(gaps: list[DataGap], limit: int | None = None) -> list[MaterialQuestion]:
+    """Return every explicit missing-information question without duplicates."""
     result: list[MaterialQuestion] = []
+    seen: set[tuple[str, str]] = set()
     for gap in gaps:
-        if (
-            not gap.question
-            or not gap.changes_estimate
-            or gap.impact not in {"high", "critical"}
-            or (gap.can_use_assumption and not gap.blocking)
-        ):
+        if not gap.question:
             continue
+        key = (gap.code.strip().casefold(), gap.question.strip().casefold())
+        if key in seen:
+            continue
+        seen.add(key)
         result.append(
             MaterialQuestion(
                 code=gap.code,
@@ -108,6 +108,6 @@ def material_questions(gaps: list[DataGap], limit: int = 5) -> list[MaterialQues
                 blocking=gap.blocking,
             )
         )
-        if len(result) == limit:
+        if limit is not None and len(result) >= limit:
             break
     return result

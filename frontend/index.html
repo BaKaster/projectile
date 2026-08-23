@@ -52,10 +52,6 @@
         </section>
 
         <div class="composer-wrap">
-          <div class="question-actions hidden" id="question-actions">
-            <span>Ответьте на вопросы одним сообщением или</span>
-            <button type="button" id="skip-questions">пропустить вопросы</button>
-          </div>
           <div class="pending-files hidden" id="pending-files"></div>
           <form class="composer" id="composer">
             <button class="attach-button" id="attach-button" type="button" aria-label="Прикрепить документы">
@@ -76,6 +72,13 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5"/></svg>
         <strong>Перетащите документы сюда</strong>
         <span>Отпустите, чтобы добавить их к сообщению</span>
+      </div>
+    </div>
+    <div class="excel-loading hidden" id="excel-loading" role="status" aria-live="polite">
+      <div class="excel-loading-card">
+        <span class="excel-loading-spinner" aria-hidden="true"></span>
+        <strong>Формируем Excel-файл</strong>
+        <span>Рассчитываем итоговые показатели и закрепляем файл за проектом…</span>
       </div>
     </div>
     <div class="toast hidden" id="toast" role="status"></div>

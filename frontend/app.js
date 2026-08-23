@@ -1,31 +1,34 @@
 import {
-  analysisExcelUrl,
   analysisReportUrl,
   answerAnalysisQuestions,
   createChat,
   deleteChat,
+  downloadAnalysisExcel,
   formatApiError,
   getAnalysisRun,
   getChat,
+  getProjectTypes,
   listChats,
   sendChatMessage,
   skipAnalysisQuestions,
+  updateAnalysisProjectType,
   updateChat,
   uploadDocuments,
 } from "./api.js";
 import { ACTIVE_STATUSES, pollAnalysis, SUCCESS_STATUSES } from "./polling.js";
 
 const apiBase = window.PROJECTILE_CONFIG?.apiBase || "http://localhost:8000";
-const state = { chat: null, run: null, files: [], busy: false, pollController: null };
+const state = { chat: null, run: null, files: [], projectTypes: [], busy: false, pollController: null };
 const $ = (selector) => document.querySelector(selector);
 const elements = {
+  header: $(".chat-header"),
   sidebar: $("#sidebar"), overlay: $("#sidebar-overlay"), history: $("#chat-history"),
   newChat: $("#new-chat"), openSidebar: $("#open-sidebar"), closeSidebar: $("#close-sidebar"),
   title: $("#chat-title"), subtitle: $("#chat-subtitle"),
   conversation: $("#conversation"), empty: $("#empty-state"),
   composer: $("#composer"), input: $("#message-input"), send: $("#send-button"),
   attach: $("#attach-button"), fileInput: $("#file-input"), pendingFiles: $("#pending-files"),
-  questionActions: $("#question-actions"), skip: $("#skip-questions"), toast: $("#toast"),
+  toast: $("#toast"), excelLoading: $("#excel-loading"),
   themeToggle: $("#theme-toggle"), themeLabel: $("#theme-label"), dropOverlay: $("#drop-overlay"),
 };
 
@@ -82,6 +85,15 @@ function setBusy(value) {
   elements.attach.disabled = value;
 }
 
+function setExcelLoading(value) {
+  elements.excelLoading.classList.toggle("hidden", !value);
+}
+
+async function loadProjectTypes() {
+  try { state.projectTypes = await getProjectTypes(apiBase); }
+  catch (error) { showToast(formatApiError(error)); }
+}
+
 function closeSidebar() {
   elements.sidebar.classList.remove("open");
   elements.overlay.classList.remove("open");
@@ -90,6 +102,26 @@ function closeSidebar() {
 function resizeInput() {
   elements.input.style.height = "auto";
   elements.input.style.height = `${Math.min(elements.input.scrollHeight, 160)}px`;
+}
+
+function updateScrollProgress() {
+  const maximum = elements.conversation.scrollHeight - elements.conversation.clientHeight;
+  const progress = maximum > 0
+    ? Math.min(100, Math.max(0, elements.conversation.scrollTop / maximum * 100))
+    : 0;
+  elements.header.style.setProperty("--chat-scroll-progress", `${progress}%`);
+}
+
+function messageDate(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function formatMessageTime(value) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(messageDate(value));
 }
 
 async function refreshHistory() {
@@ -166,8 +198,16 @@ async function removeHistoryChat(chat) {
   } catch (error) { showToast(formatApiError(error)); }
 }
 
-function statusLabel(status) {
-  return ({ queued: "В очереди", extracting: "Читаем документы", analyzing: "Анализируем", requires_input: "Нужны ответы", ready: "Анализ готов", failed: "Ошибка анализа" })[status] || "";
+function statusLabel(status, currentStep = "") {
+  if (status === "analyzing") {
+    return ({
+      classifying_and_finding_gaps: "Извлекаем факты и определяем тип проекта",
+      building_project_scope: "Формируем этапы и состав работ",
+      estimating_roles_and_effort: "Рассчитываем роли и трудозатраты",
+      finalizing_analysis: "Собираем итоговый результат",
+    })[currentStep] || "Анализируем документы";
+  }
+  return ({ queued: "В очереди", extracting: "Читаем документы", requires_input: "Нужны ответы", ready: "Анализ готов", failed: "Ошибка анализа" })[status] || "";
 }
 
 function newChat() {
@@ -176,8 +216,8 @@ function newChat() {
   elements.title.textContent = "Новый чат";
   elements.subtitle.textContent = "AI-анализ проектной документации";
   elements.conversation.replaceChildren(elements.empty);
+  elements.conversation.scrollTop = 0; updateScrollProgress();
   elements.empty.classList.remove("hidden");
-  elements.questionActions.classList.add("hidden");
   elements.input.placeholder = "Опишите проект или задайте вопрос…";
   renderPendingFiles(); refreshHistory(); closeSidebar(); elements.input.focus();
 }
@@ -191,7 +231,7 @@ async function openChat(id) {
     elements.title.textContent = chat.name;
     elements.subtitle.textContent = "История анализа проекта";
     elements.conversation.replaceChildren();
-    for (const message of chat.messages) renderUserMessage(message.content, []);
+    for (const message of chat.messages) renderUserMessage(message.content, [], message.created_at);
     if (chat.latest_analysis) {
       if (ACTIVE_STATUSES.has(chat.latest_analysis.status)) {
         renderThinking(chat.latest_analysis);
@@ -203,19 +243,24 @@ async function openChat(id) {
   } catch (error) { showToast(formatApiError(error)); }
 }
 
-function messageShell(role, label) {
+function messageShell(role, label, createdAt = new Date()) {
   const message = document.createElement("article");
   message.className = `message ${role}`;
   const avatar = document.createElement("div"); avatar.className = "avatar"; avatar.textContent = role === "user" ? "Вы" : "P";
   const body = document.createElement("div"); body.className = "message-body";
-  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = label;
+  const meta = document.createElement("div"); meta.className = "message-meta";
+  const author = document.createElement("span"); author.textContent = label;
+  const date = messageDate(createdAt);
+  const time = document.createElement("time"); time.className = "message-time";
+  time.dateTime = date.toISOString(); time.textContent = formatMessageTime(date);
+  meta.append(author, time);
   body.append(meta); message.append(avatar, body); elements.conversation.append(message);
   return body;
 }
 
-function renderUserMessage(content, files) {
+function renderUserMessage(content, files, createdAt = new Date()) {
   elements.empty.classList.add("hidden");
-  const body = messageShell("user", "Вы");
+  const body = messageShell("user", "Вы", createdAt);
   const text = document.createElement("div"); text.className = "message-text"; text.textContent = content; body.append(text);
   if (files.length) {
     const container = document.createElement("div"); container.className = "message-files";
@@ -226,11 +271,11 @@ function renderUserMessage(content, files) {
 
 function renderThinking(run) {
   $("#thinking-message")?.remove();
-  const body = messageShell("assistant", "Projectile");
+  const body = messageShell("assistant", "Projectile", run.updated_at || run.created_at);
   body.parentElement.id = "thinking-message";
   const row = document.createElement("div"); row.className = "thinking";
   const dots = document.createElement("span"); dots.className = "thinking-dots"; dots.innerHTML = "<i></i><i></i><i></i>";
-  const text = document.createElement("span"); text.textContent = statusLabel(run.status) || "Готовим анализ";
+  const text = document.createElement("span"); text.textContent = statusLabel(run.status, run.current_step) || "Готовим анализ";
   row.append(dots, text); body.append(row); scrollToBottom();
 }
 
@@ -255,36 +300,53 @@ function card(title, text, extraClass = "") {
   const strong = document.createElement("strong"); strong.textContent = title; item.append(strong, document.createTextNode(text)); return item;
 }
 
-function workPlanBlock(plan) {
-  if (!plan?.packages?.length) return textBlock("План работ пока не сформирован.");
-  const container = document.createElement("div"); container.className = "work-plan";
-  const totals = document.createElement("div"); totals.className = "work-plan-totals";
-  const totalHours = document.createElement("strong"); totalHours.textContent = `${plan.total_effort_hours ?? "—"} чел.-ч`;
-  const mode = document.createElement("span"); mode.textContent = plan.estimation_mode === "ai_refined" ? "оценка уточнена моделью" : "расчёт по нормативам";
-  totals.append(totalHours, mode); container.append(totals);
-  for (const packageItem of plan.packages) {
-    const stage = document.createElement("details"); stage.className = "work-stage";
-    const heading = document.createElement("summary");
-    const stageHours = packageItem.works.reduce((sum, work) => sum + (work.effort_hours || 0), 0);
-    heading.textContent = `${packageItem.stage_code} · ${stageHours} чел.-ч`;
-    stage.append(heading);
-    const works = document.createElement("div"); works.className = "work-items";
-    for (const work of packageItem.works) {
-      const item = document.createElement("article"); item.className = "work-item";
-      const title = document.createElement("strong"); title.textContent = work.name;
-      const range = document.createElement("span"); range.className = "work-hours";
-      range.textContent = `${work.effort_hours} чел.-ч · ${work.effort_min_hours}–${work.effort_max_hours}`;
-      const roles = document.createElement("div"); roles.className = "work-roles";
-      for (const role of work.role_assignments || []) {
-        const chip = document.createElement("span");
-        chip.textContent = `${role.role_name}: ${role.effort_hours} ч`;
-        chip.title = role.responsibility; roles.append(chip);
-      }
-      item.append(title, range, roles); works.append(item);
-    }
-    stage.append(works); container.append(stage);
+function uniqueTextItems(items) {
+  const seen = new Set();
+  return (items || []).filter((item) => {
+    const text = String(item || "").trim();
+    const key = text.toLocaleLowerCase("ru-RU").replace(/[.!?;:]+$/g, "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+}
+
+function projectTypeSelect(run) {
+  const select = document.createElement("select");
+  select.className = "analysis-type-select";
+  select.setAttribute("aria-label", "Тип проекта");
+  const grouped = new Map();
+  for (const item of state.projectTypes) {
+    if (!grouped.has(item.direction_code)) grouped.set(item.direction_code, []);
+    grouped.get(item.direction_code).push(item);
   }
-  return container;
+  if (!state.projectTypes.some((item) => item.code === run.result.project_type_code)) {
+    const option = document.createElement("option");
+    option.value = run.result.project_type_code || "";
+    option.textContent = run.result.project_type_code || "Тип не определён";
+    select.append(option);
+  }
+  for (const [direction, types] of grouped) {
+    const group = document.createElement("optgroup"); group.label = direction;
+    for (const projectType of types) {
+      const option = document.createElement("option"); option.value = projectType.code;
+      option.textContent = `${projectType.name} (${projectType.code})`;
+      group.append(option);
+    }
+    select.append(group);
+  }
+  select.value = run.result.project_type_code || "";
+  select.addEventListener("change", async () => {
+    const previous = run.result.project_type_code || "";
+    select.disabled = true;
+    try {
+      const updated = await updateAnalysisProjectType(apiBase, state.chat.id, run.run_id, select.value);
+      state.run = updated; renderAnalysis(updated);
+      showToast("Тип проекта изменён, состав работ и трудозатраты пересчитаны.");
+    } catch (error) {
+      select.value = previous; select.disabled = false; showToast(formatApiError(error));
+    }
+  });
+  return select;
 }
 
 function renderAnalysis(run) {
@@ -292,31 +354,64 @@ function renderAnalysis(run) {
   const result = run.result;
   if (!result) { renderFailure([{ message: "Backend завершил анализ без результата" }]); return; }
   state.run = run;
-  const body = messageShell("assistant", "Projectile"); body.parentElement.id = "analysis-message";
+  const body = messageShell("assistant", "Projectile", run.updated_at || run.created_at); body.parentElement.id = "analysis-message";
   const root = document.createElement("div"); root.className = "analysis";
   const top = document.createElement("div"); top.className = "analysis-top";
   const overview = document.createElement("div");
-  const label = document.createElement("div"); label.className = "analysis-label"; label.textContent = "Результат анализа";
-  const type = document.createElement("div"); type.className = "analysis-type"; type.textContent = result.project_type_code || "Тип не определён";
-  const summary = document.createElement("p"); summary.className = "analysis-summary"; summary.textContent = result.summary;
-  overview.append(label, type, summary);
+  const label = document.createElement("div"); label.className = "analysis-label"; label.textContent = "Название проекта";
+  const projectName = document.createElement("div"); projectName.className = "analysis-project-name";
+  projectName.textContent = result.project_name || state.chat?.name || "Проект без названия";
+  const typeLabel = document.createElement("label"); typeLabel.className = "analysis-type-label"; typeLabel.textContent = "Тип проекта";
+  typeLabel.append(projectTypeSelect(run));
+  overview.append(label, projectName, typeLabel);
   const confidence = document.createElement("span"); confidence.className = "confidence"; confidence.textContent = `Уверенность: ${{ low: "низкая", medium: "средняя", high: "высокая" }[result.confidence]}`;
-  top.append(overview, confidence); root.append(top);
-  root.append(analysisSection("Обоснование", textBlock(result.rationale)));
-  root.append(analysisSection("Факты", gridBlock(result.facts, (fact) => card(fact.name, fact.value))));
-  root.append(analysisSection("Допущения", listBlock(result.assumptions)));
-  root.append(analysisSection("Проблемы и риски", gridBlock(result.issues, (issue) => card(issue.description, issue.impact_on_estimate))));
-  root.append(analysisSection("Вопросы", gridBlock(result.questions, (question) => card(question.question, question.reason, "question"))));
-  root.append(analysisSection("Предупреждения", listBlock(result.warnings)));
-  const footer = document.createElement("div"); footer.className = "analysis-footer";
-  const identity = document.createElement("span"); identity.className = "analysis-id"; identity.textContent = `Анализ ${run.run_id.slice(0, 8)}`;
   const download = document.createElement("a"); download.className = "download-button";
   download.dataset.reportProject = state.chat.id;
   download.dataset.reportRun = run.run_id;
-  download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14"/></svg><span>Скачать этот анализ в PDF</span>';
-  footer.append(identity, download); root.append(footer); syncReportLinks();
-  body.append(root, renderExcelPanel(run));
+  download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 19h14"/></svg>';
+  download.setAttribute("aria-label", "Скачать анализ в PDF");
+  download.title = "Скачать анализ в PDF";
+  const topActions = document.createElement("div"); topActions.className = "analysis-top-actions";
+  topActions.append(confidence, download);
+  top.append(overview, topActions); root.append(top);
+  const description = document.createElement("div"); description.className = "analysis-description";
+  description.append(textBlock(result.summary));
+  if (result.rationale && result.rationale.trim() !== result.summary?.trim()) description.append(textBlock(result.rationale));
+  root.append(analysisSection("Подробное описание проекта", description));
+  root.append(analysisSection("Проблемы и риски", gridBlock(result.issues, (issue) => card(issue.description, issue.impact_on_estimate))));
+  root.append(analysisSection("Допущения и предупреждения", listBlock(uniqueTextItems([...(result.assumptions || []), ...(result.warnings || [])]))));
+  root.append(analysisSection("Недостающая информация", gridBlock(result.questions, (question) => card(question.question, question.reason, "question"))));
+  root.append(renderExcelPanel(run));
+  body.append(root);
+  syncReportLinks();
   updateQuestionMode(); scrollToBottom(); refreshHistory();
+}
+
+async function generateExcel(run, button = null) {
+  const label = button?.querySelector("span");
+  const defaultLabel = label?.textContent;
+  if (button) button.disabled = true;
+  if (label) label.textContent = "Формируем и закрепляем…";
+  setExcelLoading(true);
+  try {
+    const artifact = await downloadAnalysisExcel(apiBase, state.chat.id, run.run_id);
+    const url = URL.createObjectURL(artifact.blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = artifact.filename;
+    document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    if (label) label.textContent = artifact.attached ? "Excel закреплён за проектом" : defaultLabel;
+    showToast(artifact.attached
+      ? "Excel скачан и сохранён в контексте проекта для дальнейшего обсуждения."
+      : "Excel скачан.");
+    if (artifact.attached && label) setTimeout(() => { label.textContent = defaultLabel; }, 3000);
+    return true;
+  } catch (error) {
+    if (label) label.textContent = defaultLabel;
+    showToast(formatApiError(error)); return false;
+  } finally {
+    if (button) button.disabled = false;
+    setExcelLoading(false);
+  }
 }
 
 function renderExcelPanel(run) {
@@ -324,9 +419,13 @@ function renderExcelPanel(run) {
   const button = document.createElement("button"); button.type = "button"; button.className = "excel-button";
   button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7zM15 3v5h4M10 12l4 5m0-5-4 5"/></svg><span>Сформировать Excel файл</span>';
   button.setAttribute("aria-expanded", "false");
-  button.addEventListener("click", () => {
-    const questions = run.result?.questions?.filter((question) => question.blocking) || [];
-    if (run.status === "requires_input" && questions.length) {
+  button.addEventListener("click", async () => {
+    const questions = run.result?.questions || [];
+    const shouldAskQuestions = questions.length && (
+      run.status === "requires_input" ||
+      (run.status === "ready" && run.current_step === "questions_skipped")
+    );
+    if (shouldAskQuestions) {
       const existing = panel.querySelector(".excel-questions");
       if (existing) { existing.querySelector("textarea")?.focus(); return; }
       button.setAttribute("aria-expanded", "true");
@@ -339,9 +438,7 @@ function renderExcelPanel(run) {
       showToast("Дождитесь завершения анализа перед формированием Excel.");
       return;
     }
-    const link = document.createElement("a");
-    link.href = analysisExcelUrl(apiBase, state.chat.id, run.run_id);
-    document.body.append(link); link.click(); link.remove();
+    await generateExcel(run, button);
   });
   panel.append(button);
   return panel;
@@ -351,34 +448,50 @@ function buildExcelQuestions(run, questions, trigger) {
   const form = document.createElement("form"); form.className = "excel-questions";
   const title = document.createElement("h3"); title.textContent = "Нужна дополнительная информация";
   const copy = document.createElement("p");
-  copy.textContent = "Заполните ответы на вопросы ниже. После уточнения анализ обновится, и Excel-файл можно будет сформировать повторным нажатием.";
+  copy.textContent = "Ответьте на известные вам вопросы — заполнять все поля необязательно. После отправки или пропуска система рассчитает работы, роли и трудозатраты.";
   const list = document.createElement("div"); list.className = "excel-question-list";
   questions.forEach((question, index) => {
     const field = document.createElement("div"); field.className = "excel-question";
     const label = document.createElement("label"); label.htmlFor = `excel-answer-${index}`; label.textContent = question.question;
     if (question.reason) { const reason = document.createElement("small"); reason.textContent = question.reason; label.append(reason); }
-    const input = document.createElement("textarea"); input.id = `excel-answer-${index}`; input.name = `answer-${index}`; input.required = true; input.placeholder = "Введите ответ…";
+    const input = document.createElement("textarea"); input.id = `excel-answer-${index}`; input.name = `answer-${index}`; input.placeholder = "Введите ответ, если информация известна…";
     field.append(label, input); list.append(field);
   });
   const actions = document.createElement("div"); actions.className = "excel-question-actions";
   const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "excel-cancel"; cancel.textContent = "Отмена";
+  const skip = document.createElement("button"); skip.type = "button"; skip.className = "excel-skip"; skip.textContent = "Пропустить вопросы";
   const submit = document.createElement("button"); submit.type = "submit"; submit.className = "excel-submit"; submit.textContent = "Отправить ответы";
   cancel.addEventListener("click", () => { trigger.setAttribute("aria-expanded", "false"); form.remove(); });
+  skip.addEventListener("click", async () => {
+    if (state.busy) return;
+    setBusy(true); cancel.disabled = true; skip.disabled = true; submit.disabled = true;
+    try {
+      state.run = await skipAnalysisQuestions(apiBase, state.chat.id, run.run_id);
+      renderAnalysis(state.run);
+      await generateExcel(state.run);
+    } catch (error) {
+      cancel.disabled = false; skip.disabled = false; submit.disabled = false;
+      showToast(formatApiError(error));
+    } finally {
+      setBusy(false); updateQuestionMode();
+    }
+  });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const answers = questions.map((question, index) => ({ question: question.question, answer: form.elements[`answer-${index}`].value.trim() }));
-    const missing = answers.findIndex((item) => !item.answer);
-    if (missing >= 0) { form.elements[`answer-${missing}`].focus(); showToast("Ответьте на все вопросы, чтобы обновить анализ."); return; }
+    const answers = questions
+      .map((question, index) => ({ question: question.question, answer: form.elements[`answer-${index}`].value.trim() }))
+      .filter((item) => item.answer);
+    if (!answers.length) { showToast("Заполните хотя бы одно поле или нажмите «Пропустить вопросы»."); return; }
     const content = ["Ответы для формирования Excel:", ...answers.map((item, index) => `${index + 1}. ${item.question}\nОтвет: ${item.answer}`)].join("\n\n");
-    setBusy(true); submit.disabled = true; cancel.disabled = true;
+    setBusy(true); submit.disabled = true; cancel.disabled = true; skip.disabled = true;
     try {
       renderUserMessage(content, []);
       const accepted = await answerAnalysisQuestions(apiBase, state.chat.id, run.run_id, content);
-      state.run = accepted.analysis; renderThinking(accepted.analysis); refreshHistory();
-      await beginPolling(accepted.analysis.run_id);
-    } catch (error) { setBusy(false); submit.disabled = false; cancel.disabled = false; showToast(formatApiError(error)); }
+      state.run = accepted.analysis; renderAnalysis(accepted.analysis); refreshHistory();
+      await generateExcel(accepted.analysis);
+    } catch (error) { setBusy(false); submit.disabled = false; cancel.disabled = false; skip.disabled = false; showToast(formatApiError(error)); }
   });
-  actions.append(cancel, submit); form.append(title, copy, list, actions);
+  actions.append(cancel, skip, submit); form.append(title, copy, list, actions);
   return form;
 }
 
@@ -392,7 +505,6 @@ function renderFailure(errors = []) {
 
 function updateQuestionMode() {
   const requires = state.run?.status === "requires_input";
-  elements.questionActions.classList.toggle("hidden", !requires);
   elements.input.placeholder = requires ? "Ответьте на вопросы для уточнения анализа…" : "Продолжите диалог или добавьте документы…";
 }
 
@@ -436,11 +548,15 @@ async function submitMessage(event) {
     const actualContent = content || "Проанализируй приложенные документы";
     renderUserMessage(actualContent, sentFiles);
     elements.input.value = ""; state.files = []; resizeInput(); renderPendingFiles();
-    const accepted = state.run?.status === "requires_input"
-      ? await answerAnalysisQuestions(apiBase, state.chat.id, state.run.run_id, actualContent)
-      : await sendChatMessage(apiBase, state.chat.id, actualContent);
-    state.run = accepted.analysis; renderThinking(accepted.analysis); refreshHistory();
-    await beginPolling(accepted.analysis.run_id);
+    if (state.run?.status === "requires_input") {
+      const resolved = await answerAnalysisQuestions(apiBase, state.chat.id, state.run.run_id, actualContent);
+      state.run = resolved.analysis; renderAnalysis(resolved.analysis); refreshHistory();
+      await generateExcel(resolved.analysis);
+    } else {
+      const accepted = await sendChatMessage(apiBase, state.chat.id, actualContent);
+      state.run = accepted.analysis; renderThinking(accepted.analysis); refreshHistory();
+      await beginPolling(accepted.analysis.run_id);
+    }
   } catch (error) { setBusy(false); showToast(formatApiError(error)); }
 }
 
@@ -450,6 +566,7 @@ async function skipQuestions() {
   try {
     state.run = await skipAnalysisQuestions(apiBase, state.chat.id, state.run.run_id);
     renderAnalysis(state.run);
+    await generateExcel(state.run);
   } catch (error) { showToast(formatApiError(error)); }
   finally { setBusy(false); updateQuestionMode(); }
 }
@@ -461,6 +578,8 @@ elements.input.addEventListener("input", resizeInput);
 elements.input.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); elements.composer.requestSubmit(); } });
 elements.attach.addEventListener("click", () => elements.fileInput.click());
 elements.fileInput.addEventListener("change", () => { addFiles(elements.fileInput.files); elements.fileInput.value = ""; });
+elements.conversation.addEventListener("scroll", updateScrollProgress, { passive: true });
+new ResizeObserver(updateScrollProgress).observe(elements.conversation);
 document.addEventListener("dragenter", (event) => {
   if (!hasFiles(event)) return;
   event.preventDefault(); dragDepth += 1; elements.dropOverlay.classList.remove("hidden");
@@ -480,9 +599,9 @@ elements.themeToggle.addEventListener("click", () => {
   const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   localStorage.setItem("projectile-theme", theme); setTheme(theme);
 });
-elements.newChat.addEventListener("click", newChat); elements.skip.addEventListener("click", skipQuestions);
+elements.newChat.addEventListener("click", newChat);
 elements.openSidebar.addEventListener("click", () => { elements.sidebar.classList.add("open"); elements.overlay.classList.add("open"); });
 elements.closeSidebar.addEventListener("click", closeSidebar); elements.overlay.addEventListener("click", closeSidebar);
 window.addEventListener("beforeunload", () => state.pollController?.abort());
 
-setTheme(initialTheme()); newChat();
+setTheme(initialTheme()); loadProjectTypes().finally(newChat);

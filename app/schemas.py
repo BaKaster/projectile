@@ -74,6 +74,7 @@ class AnalysisRunAccepted(BaseModel):
 
 class ProjectAnalysisResponse(BaseModel):
     id: uuid.UUID
+    project_name: str | None = None
     project_type_code: str | None
     confidence: Literal["low", "medium", "high"]
     summary: str
@@ -144,6 +145,11 @@ class ChatMessageAccepted(BaseModel):
     analysis: AnalysisRunAccepted
 
 
+class QuestionAnswerResolved(BaseModel):
+    message: ChatMessageResponse
+    analysis: AnalysisRunResponse
+
+
 class ChatSummary(BaseModel):
     id: uuid.UUID
     name: str
@@ -164,3 +170,16 @@ class ChatDetail(BaseModel):
 
 class QuestionAnswerCreate(BaseModel):
     content: str = Field(min_length=1, max_length=50_000)
+
+
+class ProjectTypeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    direction_code: str
+    name: str
+    details: str | None
+
+
+class ProjectTypeUpdate(BaseModel):
+    project_type_code: str = Field(min_length=1, max_length=100)

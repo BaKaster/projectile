@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Application code changes no longer invalidate the heavyweight ML dependency layers.
 COPY app ./app
 COPY data ./data
-COPY ["Универсальный_расчет_стоимости_MONSters_v2_упрощенный.xlsx", "/app/data/estimate-template.xlsx"]
+COPY ["Шаблон.xlsx", "/app/data/estimate-template.xlsx"]
 
 ENV HF_HOME=/home/appuser/.cache/huggingface
 

@@ -45,6 +45,7 @@ from app.models import (
     Project,
     ProjectAnalysis,
     ProjectDocument,
+    ProjectType,
 )
 from app.schemas import (
     AnalysisRunAccepted,
@@ -61,12 +62,15 @@ from app.schemas import (
     HealthResponse,
     ProjectCreate,
     ProjectResponse,
+    ProjectTypeResponse,
+    ProjectTypeUpdate,
+    QuestionAnswerResolved,
     QuestionAnswerCreate,
     StagePlanRequest,
     UploadedDocumentResponse,
     WorkPlanRequest,
 )
-from app.stage_contracts import ProjectStagePlan
+from app.stage_contracts import ProjectStagePlan, StagePlanContext
 from app.stage_planner import StagePlanningError
 from app.storage import (
     FileTooLargeError,
@@ -75,7 +79,7 @@ from app.storage import (
     StagedUpload,
     safe_filename,
 )
-from app.work_contracts import GeneratedWorkPlan
+from app.work_contracts import GeneratedWorkPlan, WorkFact, WorkPlanContext
 from app.work_generator import WorkGenerationError
 
 SwaggerUploadFile = Annotated[
@@ -86,6 +90,23 @@ SwaggerUploadFile = Annotated[
 router = APIRouter()
 logger = logging.getLogger(__name__)
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.get(
+    "/api/v1/project-types",
+    response_model=list[ProjectTypeResponse],
+    tags=["stages"],
+)
+async def list_project_types(session: SessionDependency) -> list[ProjectType]:
+    return list(
+        (
+            await session.scalars(
+                select(ProjectType).order_by(
+                    ProjectType.direction_code, ProjectType.name
+                )
+            )
+        ).all()
+    )
 
 
 @router.post(
@@ -827,6 +848,7 @@ def _analysis_run_response(
     if result is not None:
         result_payload = {
             "id": result.id,
+            "project_name": result.raw_result.get("project_name"),
             "project_type_code": result.project_type_code,
             "confidence": result.confidence,
             "summary": result.summary,
@@ -907,8 +929,7 @@ async def get_latest_project_analysis(
 
 @router.post(
     "/api/v1/projects/{project_id}/analysis-runs/{run_id}/answers",
-    response_model=ChatMessageAccepted,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=QuestionAnswerResolved,
     tags=["analysis"],
 )
 async def answer_analysis_questions(
@@ -916,7 +937,8 @@ async def answer_analysis_questions(
     run_id: uuid.UUID,
     payload: QuestionAnswerCreate,
     session: SessionDependency,
-) -> ChatMessageAccepted:
+    request: Request,
+) -> QuestionAnswerResolved:
     project = await session.get(Project, project_id)
     run = await session.scalar(
         select(AnalysisRun).where(
@@ -926,7 +948,10 @@ async def answer_analysis_questions(
     )
     if project is None or run is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
-    if run.status != "requires_input":
+    answers_allowed = run.status == "requires_input" or (
+        run.status == "ready" and run.current_step == "questions_skipped"
+    )
+    if not answers_allowed:
         raise HTTPException(
             status_code=409,
             detail="Answers are accepted only when analysis requires input",
@@ -934,16 +959,32 @@ async def answer_analysis_questions(
     message = await _append_chat_message(
         session, project, payload.content, kind="answer"
     )
-    # The clarification loop is intentionally single-pass: the response is
-    # incorporated into a final estimate, never used to ask a second round.
-    next_run = await _queue_project_analysis(
-        session, project_id, finalize_without_questions=True
+    result = await session.scalar(
+        select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
     )
+    if result is None:
+        raise HTTPException(status_code=409, detail="Analysis result is not ready")
+    result.facts = [
+        *result.facts,
+        {
+            "name": "Уточнения пользователя",
+            "value": payload.content,
+            "source_document_ids": [],
+        },
+    ]
+    if result.project_type_code is None:
+        result.project_type_code = "SUP_Complex"
+    _recalculate_existing_analysis(request, result, result.project_type_code)
+    run.status = "ready"
+    run.current_step = "answers_applied"
+    project.updated_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(message)
-    return ChatMessageAccepted(
+    await session.refresh(run)
+    await session.refresh(result)
+    return QuestionAnswerResolved(
         message=ChatMessageResponse.model_validate(message),
-        analysis=_analysis_accepted(next_run),
+        analysis=_analysis_run_response(run, result),
     )
 
 
@@ -956,6 +997,7 @@ async def skip_analysis_questions(
     project_id: uuid.UUID,
     run_id: uuid.UUID,
     session: SessionDependency,
+    request: Request,
 ) -> AnalysisRunResponse:
     run = await session.scalar(
         select(AnalysisRun).where(
@@ -965,6 +1007,13 @@ async def skip_analysis_questions(
     )
     if run is None:
         raise HTTPException(status_code=404, detail="Analysis run not found")
+    if run.status == "ready" and run.current_step == "questions_skipped":
+        completed_result = await session.scalar(
+            select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
+        )
+        if completed_result is None:
+            raise HTTPException(status_code=409, detail="Analysis result is not ready")
+        return _analysis_run_response(run, completed_result)
     if run.status != "requires_input":
         raise HTTPException(
             status_code=409,
@@ -975,6 +1024,9 @@ async def skip_analysis_questions(
     )
     if result is None:
         raise HTTPException(status_code=409, detail="Analysis result is not ready")
+    if result.project_type_code is None:
+        result.project_type_code = "SUP_Complex"
+    _recalculate_existing_analysis(request, result, result.project_type_code)
     run.status = "ready"
     run.current_step = "questions_skipped"
     project = await session.get(Project, project_id)
@@ -982,6 +1034,108 @@ async def skip_analysis_questions(
         project.updated_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(run)
+    await session.refresh(result)
+    return _analysis_run_response(run, result)
+
+
+def _recalculate_existing_analysis(
+    request: Request,
+    result: ProjectAnalysis,
+    project_type_code: str,
+) -> None:
+    raw_result = dict(result.raw_result)
+    raw_result["project_type_code"] = project_type_code
+    signals = [
+        item.get("code")
+        for item in raw_result.get("stage_signals", [])
+        if isinstance(item, dict)
+        and item.get("code") in request.app.state.work_generator.signal_codes
+    ]
+    stage_signal_codes = {
+        item.code for item in request.app.state.stage_planner.catalog.signal_catalog
+    }
+    stage_signals = [code for code in signals if code in stage_signal_codes]
+    try:
+        stage_plan = request.app.state.stage_planner.build_plan(
+            project_type_code, StagePlanContext(signals=stage_signals)
+        )
+    except StagePlanningError:
+        logger.warning(
+            "Stored stage signals were rejected during final calculation; using baseline",
+            exc_info=True,
+        )
+        stage_plan = request.app.state.stage_planner.build_plan(
+            project_type_code, StagePlanContext()
+        )
+    work_plan = request.app.state.work_generator.generate(
+        stage_plan,
+        WorkPlanContext(
+            signals=signals,
+            facts=[
+                WorkFact.model_validate(fact)
+                for fact in result.facts
+                if isinstance(fact, dict)
+            ],
+        ),
+    )
+    work_plan = request.app.state.effort_estimator.estimate(work_plan)
+    raw_result["stage_plan"] = stage_plan.model_dump(mode="json")
+    raw_result["work_plan"] = work_plan.model_dump(mode="json")
+    result.raw_result = raw_result
+
+
+@router.patch(
+    "/api/v1/projects/{project_id}/analysis-runs/{run_id}/project-type",
+    response_model=AnalysisRunResponse,
+    tags=["analysis"],
+)
+async def update_analysis_project_type(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    payload: ProjectTypeUpdate,
+    session: SessionDependency,
+    request: Request,
+) -> AnalysisRunResponse:
+    run = await session.scalar(
+        select(AnalysisRun).where(
+            AnalysisRun.id == run_id, AnalysisRun.project_id == project_id
+        )
+    )
+    result = await session.scalar(
+        select(ProjectAnalysis).where(
+            ProjectAnalysis.run_id == run_id,
+            ProjectAnalysis.project_id == project_id,
+        )
+    )
+    project_type = await session.get(ProjectType, payload.project_type_code)
+    if run is None or result is None:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    if project_type is None:
+        raise HTTPException(status_code=422, detail="Unknown project type")
+
+    result.project_type_code = project_type.code
+    result.confidence = "high"
+    raw_result = dict(result.raw_result)
+    raw_result["project_type_code"] = project_type.code
+
+    # A preliminary analysis remains unestimated until questions are resolved.
+    if run.status == "ready":
+        try:
+            _recalculate_existing_analysis(request, result, project_type.code)
+            raw_result = dict(result.raw_result)
+        except (StagePlanningError, WorkGenerationError, ValueError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    else:
+        raw_result.pop("stage_plan", None)
+        raw_result.pop("work_plan", None)
+
+    result.raw_result = raw_result
+    project = await session.get(Project, project_id)
+    if project is not None:
+        project.updated_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(run)
+    await session.refresh(result)
     return _analysis_run_response(run, result)
 
 
@@ -1489,7 +1643,7 @@ def _analysis_estimate_payload(
                     "Уточнённая" if result.confidence == "high" else "Бюджетная"
                 ),
                 "confidence": confidence,
-                "vat_rate": 0.2,
+                "vat_rate": 0.22,
                 "discount_rate": 0,
                 "work_hours_per_day": 8,
                 "default_hours_basis": "Всего",
@@ -1570,6 +1724,8 @@ async def download_analysis_xlsx(
         .order_by(Document.version.desc())
         .limit(1)
     )
+    artifact_document_id = previous.id if previous is not None else None
+    artifact_version = previous.version if previous is not None else 1
     if previous is None or previous.checksum_sha256 != checksum:
         version = 1 if previous is None else previous.version + 1
         document_id = uuid.uuid4()
@@ -1608,9 +1764,13 @@ async def download_analysis_xlsx(
                 ]
             )
             await session.commit()
+            artifact_document_id = document_id
+            artifact_version = version
         except Exception:
             storage.remove_persisted(persisted)
             raise
+    project.updated_at = datetime.now(UTC)
+    await session.commit()
     safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", project.name).strip("-_")
     ascii_name = f"{safe_name or 'estimate'}.xlsx"
     unicode_name = quote(f"{project.name}.xlsx")
@@ -1624,5 +1784,8 @@ async def download_analysis_xlsx(
                 f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
             ),
             "X-Excel-Recalculation": service.recalculation_status,
+            "X-Projectile-Artifact-Attached": "true",
+            "X-Projectile-Artifact-Document-Id": str(artifact_document_id),
+            "X-Projectile-Artifact-Version": str(artifact_version),
         },
     )

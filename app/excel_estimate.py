@@ -131,7 +131,7 @@ class ExcelEstimateRequest(_ExcelInputModel):
     estimate_date: date = Field(default_factory=date.today)
     estimate_mode: EstimateMode = "Бюджетная"
     confidence: float = Field(default=0.7, ge=0, le=1)
-    vat_rate: float = Field(default=0.2, ge=0, le=1)
+    vat_rate: float = Field(default=0.22, ge=0, le=1)
     discount_rate: float = Field(default=0, ge=0, le=1)
     work_hours_per_day: float = Field(default=8, gt=0, le=24)
     planned_start_date: date | None = None
@@ -196,6 +196,27 @@ class ExcelEstimateService:
         "Справочник ролей",
         "Проверки",
     }
+    GENERAL_INPUT_LABELS: ClassVar[dict[str, str]] = {
+        "project_name": "Название проекта",
+        "project_type_code": "Тип проекта",
+        "estimate_date": "Дата оценки",
+        "estimate_mode": "Режим оценки",
+        "confidence": "Уверенность оценки",
+        "vat_rate": "НДС",
+        "discount_rate": "Скидка",
+        "work_hours_per_day": "Рабочих часов в дне",
+        "planned_start_date": "Плановая дата старта",
+        "default_hours_basis": "Интерпретация часов ИИ",
+        "source_or_spec_version": "Источник / версия ТЗ",
+        "main_assumption": "Главное допущение",
+        "commercial_reserve_rate": "БФ / коммерческий резерв",
+    }
+    ASSUMPTION_COLUMN_LABELS: ClassVar[dict[str, tuple[int, str]]] = {
+        "type": (1, "Тип"),
+        "text": (2, "Формулировка"),
+        "source": (3, "Источник / основание"),
+        "impact": (4, "Влияние на оценку"),
+    }
 
     def __init__(
         self,
@@ -224,11 +245,129 @@ class ExcelEstimateService:
         }
         self._parameters = self._load_parameters(package)
         self._roles = self._load_roles(package)
+        self._general_input_cells = self._load_general_input_cells(package)
+        self._normalize_removed_confidence_check(package)
+        self._parameter_input_cells = self._load_parameter_input_cells(package)
+        (
+            self._assumption_input_cells,
+            self._assumption_clear_range,
+        ) = self._load_assumption_input_cells(package)
         self._internal_role_codes = self._load_internal_role_codes(role_catalog_path)
         self._validate_template_compatibility(package)
+        self._template = package.to_bytes()
         self._template_formula_fingerprint = package.formula_fingerprint()
         self._recalculation_command = recalculation_command
         self._recalculation_timeout_seconds = recalculation_timeout_seconds
+
+    @classmethod
+    def _load_general_input_cells(cls, package: _WorkbookPackage) -> dict[str, str]:
+        rows = package.read_rows("Ввод", 1, 100, 1, 2)
+        label_rows = {
+            str(row[0]).strip(): index
+            for index, row in enumerate(rows, 1)
+            if row[0] not in (None, "")
+        }
+        required_fields = set(cls.GENERAL_INPUT_LABELS) - {"confidence"}
+        missing = [
+            cls.GENERAL_INPUT_LABELS[field]
+            for field in required_fields
+            if cls.GENERAL_INPUT_LABELS[field] not in label_rows
+        ]
+        if missing:
+            raise ExcelEstimateError(
+                "Excel template is missing input labels: " + ", ".join(sorted(missing))
+            )
+        return {
+            field: f"B{label_rows[label]}"
+            for field, label in cls.GENERAL_INPUT_LABELS.items()
+            if label in label_rows
+        }
+
+    def _normalize_removed_confidence_check(self, package: _WorkbookPackage) -> None:
+        if "confidence" in self._general_input_cells:
+            return
+        formula = next(
+            (
+                value
+                for sheet, cell, value in package.formula_fingerprint()
+                if sheet == "Проверки" and cell == "B13"
+            ),
+            None,
+        )
+        if formula is None or "#REF!" not in formula:
+            return
+        package.write_formula(
+            "Проверки",
+            "B13",
+            (
+                'IFERROR(INDEX(Ввод!$B$1:$B$100,'
+                'MATCH("Уверенность оценки",Ввод!$A$1:$A$100,0)),1)'
+            ),
+            1,
+        )
+        package.write_formula_cached_value("Проверки", "E13", "PASS")
+        package.write_cells(
+            "Проверки",
+            {
+                "C13": "Не применяется",
+                "D13": "Поле отсутствует в текущем шаблоне",
+            },
+        )
+
+    @staticmethod
+    def _load_parameter_input_cells(package: _WorkbookPackage) -> dict[int, str]:
+        result: dict[int, str] = {}
+        for sheet, cell, formula in package.formula_fingerprint():
+            if sheet != "Ввод" or not cell.startswith("E"):
+                continue
+            input_match = re.match(r'IF\(D(\d+)<>"",D\1,', formula)
+            slot_rows = re.findall(r"\$A\$?(\d+)", formula)
+            if input_match is None or not slot_rows:
+                continue
+            slot_row = int(slot_rows[-1])
+            slot_value = package.read_rows("Ввод", slot_row, slot_row, 1, 1)[0][0]
+            if isinstance(slot_value, (int, float)) and int(slot_value) == slot_value:
+                result[int(slot_value)] = f"D{input_match.group(1)}"
+        if set(result) != set(range(1, 9)):
+            raise ExcelEstimateError(
+                "Excel template must expose input formulas for parameter slots 1..8"
+            )
+        return result
+
+    @classmethod
+    def _load_assumption_input_cells(
+        cls, package: _WorkbookPackage
+    ) -> tuple[dict[str, list[str]], str]:
+        rows = package.read_rows("Ввод", 1, 100, 1, 4)
+        header_rows: dict[str, int] = {}
+        for field, (column, label) in cls.ASSUMPTION_COLUMN_LABELS.items():
+            header_row = next(
+                (
+                    index
+                    for index, row in enumerate(rows, 1)
+                    if row[column - 1] not in (None, "")
+                    and str(row[column - 1]).strip() == label
+                ),
+                None,
+            )
+            if header_row is None:
+                raise ExcelEstimateError(
+                    f"Excel template is missing assumption column label: {label}"
+                )
+            header_rows[field] = header_row
+        # Some templates move labels independently by column.  Keep payload rows
+        # aligned across A:D and use the lowest header as the block boundary.
+        first_user_row = max(header_rows.values()) + 5
+        result = {
+            field: [
+                f"{chr(ord('A') + column - 1)}{first_user_row + index}"
+                for index in range(4)
+            ]
+            for field, (column, _label) in cls.ASSUMPTION_COLUMN_LABELS.items()
+        }
+        first_possible_row = min(header_rows.values()) + 5
+        clear_range = f"A{first_possible_row}:D{first_user_row + 3}"
+        return result, clear_range
 
     @staticmethod
     def _load_parameters(
@@ -485,38 +624,52 @@ class ExcelEstimateService:
         parameters = self._resolve_parameters(payload)
         self._validate_dependencies(payload, parameters)
         package = _WorkbookPackage(self._template)
-        package.clear("Ввод", ["D20:D27", "A36:D39"])
+        package.clear(
+            "Ввод",
+            [
+                *(f"{cell}:{cell}" for cell in self._parameter_input_cells.values()),
+                self._assumption_clear_range,
+            ],
+        )
         package.clear("Расчёт", ["A6:J105", "U6:V105"])
         package.clear("Внешние затраты", ["A6:G25", "K6:K25"])
 
+        general_values = {
+            "project_name": payload.project_name,
+            "project_type_code": payload.project_type_code,
+            "estimate_date": payload.estimate_date,
+            "estimate_mode": payload.estimate_mode,
+            "confidence": payload.confidence,
+            "vat_rate": payload.vat_rate,
+            "discount_rate": payload.discount_rate,
+            "work_hours_per_day": payload.work_hours_per_day,
+            "planned_start_date": payload.planned_start_date,
+            "default_hours_basis": payload.default_hours_basis,
+            "source_or_spec_version": payload.source_or_spec_version,
+            "main_assumption": payload.main_assumption,
+            "commercial_reserve_rate": payload.commercial_reserve_rate,
+        }
         package.write_cells(
             "Ввод",
             {
-                "B4": payload.project_name,
-                "B5": payload.project_type_code,
-                "B6": payload.estimate_date,
-                "B7": payload.estimate_mode,
-                "B8": payload.confidence,
-                "B9": payload.vat_rate,
-                "B10": payload.discount_rate,
-                "B11": payload.work_hours_per_day,
-                "B12": payload.planned_start_date,
-                "B13": payload.default_hours_basis,
-                "B14": payload.source_or_spec_version,
-                "B15": payload.main_assumption,
-                "B16": payload.commercial_reserve_rate,
-                **{f"D{19 + slot}": value for slot, value in parameters.items()},
+                **{
+                    cell: general_values[field]
+                    for field, cell in self._general_input_cells.items()
+                },
+                **{
+                    self._parameter_input_cells[slot]: value
+                    for slot, value in parameters.items()
+                },
             },
         )
         for index, item in enumerate(payload.assumptions):
-            row = 36 + index
             package.write_cells(
                 "Ввод",
                 {
-                    f"A{row}": item.type,
-                    f"B{row}": item.text,
-                    f"C{row}": item.source,
-                    f"D{row}": item.impact,
+                    self._assumption_input_cells["type"][index]: item.type,
+                    self._assumption_input_cells["text"][index]: item.text,
+                    self._assumption_input_cells["source"][index]: item.source,
+                    self._assumption_input_cells["impact"][index]: item.impact,
                 },
             )
 
@@ -655,6 +808,13 @@ class ExcelEstimateService:
         package.write_formula_cached_value(
             "Проверки", "E6", "PASS" if recognized else "FAIL"
         )
+        confidence = package.read_rows("Проверки", 13, 13, 2, 2)[0][0]
+        confidence_status = (
+            "PASS"
+            if isinstance(confidence, (int, float)) and confidence >= 0.7
+            else "WARN"
+        )
+        package.write_formula_cached_value("Проверки", "E13", confidence_status)
         statuses = [
             row[0] for row in package.read_rows("Проверки", 7, 14, 5, 5)
         ]
@@ -1022,6 +1182,27 @@ class _WorkbookPackage:
         else:
             cell.attrib.pop("t", None)
         ET.SubElement(cell, f"{{{_MAIN_NS}}}v").text = str(value)
+
+    def write_formula(
+        self,
+        sheet_name: str,
+        address: str,
+        formula: str,
+        cached_value: str | int | float,
+    ) -> None:
+        root = self._tree(self.sheet_paths[sheet_name])
+        cell = next(
+            (
+                item
+                for item in root.findall(f".//{{{_MAIN_NS}}}c")
+                if item.attrib.get("r") == address
+            ),
+            None,
+        )
+        if cell is None or cell.find(f"{{{_MAIN_NS}}}f") is None:
+            raise ExcelEstimateError(f"formula target does not exist: {sheet_name}!{address}")
+        cell.find(f"{{{_MAIN_NS}}}f").text = formula
+        self.write_formula_cached_value(sheet_name, address, cached_value)
 
     @staticmethod
     def _set_cell_value(cell: ET.Element, value: Any) -> None:

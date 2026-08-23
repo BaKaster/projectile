@@ -21,7 +21,7 @@ def _recognizer() -> DocumentRecognizer:
     )
 
 
-def test_material_questions_excludes_low_value_and_safe_assumptions() -> None:
+def test_material_questions_returns_every_explicit_question() -> None:
     questions = material_questions(
         [
             DataGap(
@@ -54,7 +54,7 @@ def test_material_questions_excludes_low_value_and_safe_assumptions() -> None:
             ),
         ]
     )
-    assert [item.code for item in questions] == ["users"]
+    assert [item.code for item in questions] == ["users", "color", "retention"]
 
 
 def test_plain_russian_text_is_recognized(tmp_path: Path) -> None:

@@ -121,7 +121,35 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 .new-chat span { font-size: 20px; font-weight: 400; line-height: 1; }
 .history-label { padding: 27px 10px 10px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
 .history-label::before { content: "// "; color: var(--red); }
-.chat-history { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.chat-history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 5px;
+  margin-right: -8px;
+  scrollbar-width: thin;
+  scrollbar-color: #55558a transparent;
+  scrollbar-gutter: stable;
+}
+.chat-history::-webkit-scrollbar { width: 9px; }
+.chat-history::-webkit-scrollbar-track {
+  margin-block: 5px;
+  background: transparent;
+}
+.chat-history::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  border: 2px solid var(--side);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #66669a, #454578);
+  background-clip: padding-box;
+}
+.chat-history::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ff6b64, var(--red));
+  background-clip: padding-box;
+}
 .history-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-left: 3px solid transparent; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; transition: .16s ease; }
 .history-row:hover, .history-row.active { border-left-color: var(--red); background: var(--side-2); }
 .history-item { min-width: 0; width: 100%; border: 0; background: transparent; color: #c4c4d5; text-align: left; padding: 11px 8px 11px 9px; cursor: pointer; }
@@ -148,8 +176,8 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 :root[data-theme="dark"] .theme-icon.moon { display: block; }
 
 .chat-main { position: relative; display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; background: var(--bg); }
-.chat-header { height: 68px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); z-index: 5; }
-.chat-header::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 64px; height: 3px; background: var(--red); }
+.chat-header { --chat-scroll-progress: 0%; position: relative; height: 68px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); z-index: 5; }
+.chat-header::after { content: ""; position: absolute; left: 0; bottom: -1px; width: var(--chat-scroll-progress); height: 3px; background: linear-gradient(90deg, var(--red), #ff8a3d); transition: width .08s linear; }
 .chat-title { min-width: 0; }
 .chat-title > span { display: block; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-title small { display: block; margin-top: 4px; color: var(--muted); font-size: 10.5px; letter-spacing: .03em; }
@@ -171,7 +199,8 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 .message.assistant .avatar { position: relative; overflow: hidden; background: var(--navy); color: #fff; }
 .message.assistant .avatar::after { content: ""; position: absolute; right: 0; top: 0; width: 7px; height: 100%; background: var(--red); }
 .message-body { min-width: 0; padding-top: 4px; }
-.message-meta { font-size: 12.5px; font-weight: 700; margin-bottom: 8px; }
+.message-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12.5px; font-weight: 700; margin-bottom: 8px; }
+.message-time { color: var(--muted); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .message-text { font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .file-chip { padding: 7px 10px; border-left: 3px solid var(--violet); border-radius: 0 4px 4px 0; background: var(--surface-2); color: var(--muted); font-size: 11.5px; }
@@ -187,8 +216,16 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 .analysis-top::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: linear-gradient(var(--red), var(--violet)); }
 .analysis-label { color: var(--red); font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 .analysis-label::before { content: "// "; }
+.analysis-project-name { margin: 8px 0 16px; font-size: 23px; font-weight: 800; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.analysis-type-label { display: grid; gap: 7px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.analysis-type-select { width: min(100%, 620px); border: 1px solid var(--line-strong); border-radius: 4px; outline: 0; padding: 10px 36px 10px 12px; color: var(--ink); background: var(--surface-2); font: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none; cursor: pointer; }
+.analysis-type-select:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(121,73,244,.1); }
+.analysis-type-select:disabled { opacity: .6; cursor: wait; }
 .analysis-type { margin: 8px 0 10px; font-size: 21px; font-weight: 800; letter-spacing: -.03em; overflow-wrap: anywhere; }
 .analysis-summary { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.68; }
+.analysis-description { display: grid; gap: 12px; color: var(--muted); font-size: 14px; line-height: 1.68; }
+.analysis-description p { margin: 0; }
+.analysis-top-actions { display: flex; align-items: center; gap: 8px; align-self: start; }
 .confidence { align-self: center; padding: 9px 12px; border-radius: 3px; background: var(--navy); color: #fff; font-size: 9.5px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
 .analysis-section { padding: 22px 28px; border-bottom: 1px solid var(--line); }
 .analysis-section h3 { margin: 0 0 14px; font-size: 14px; font-weight: 800; letter-spacing: -.01em; }
@@ -202,26 +239,15 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 .analysis-card:nth-child(3n + 3) { border-top-color: var(--red); }
 .analysis-card strong { display: block; margin-bottom: 6px; font-size: 12px; color: var(--ink); }
 .analysis-card.question { border: 1px solid var(--line-strong); border-left: 4px solid var(--red); background: var(--surface); }
-.work-plan { display: grid; gap: 10px; }
-.work-plan-totals { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 13px 15px; border-radius: 3px; background: var(--navy); color: #fff; }
-.work-plan-totals strong { font-size: 16px; font-weight: 800; }
-.work-plan-totals span { font-size: 11px; opacity: .72; }
-.work-stage { border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
-.work-stage summary { cursor: pointer; padding: 13px 15px; font-size: 12px; font-weight: 800; }
-.work-items { display: grid; gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
-.work-item { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 8px 16px; padding: 13px 15px; background: var(--surface); }
-.work-item > strong { font-size: 13px; line-height: 1.45; }
-.work-hours { white-space: nowrap; color: var(--muted); font-size: 12px; }
-.work-roles { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; }
-.work-roles span { padding: 4px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 11px; }
 .analysis-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 28px; background: var(--navy); color: #fff; }
 .analysis-id { color: #c6c6d8; font-size: 10.5px; font-variant-numeric: tabular-nums; }
-.download-button { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 3px; padding: 11px 14px; color: #fff; background: var(--red); text-decoration: none; font-size: 11.5px; font-weight: 700; transition: .16s ease; }
+.download-button { display: inline-grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border: 0; border-radius: 4px; padding: 0; color: #fff; background: var(--red); text-decoration: none; transition: .16s ease; }
 .download-button:hover { background: #ff5a52; transform: translateY(-1px); }
-.download-button svg { width: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.excel-panel { margin: 12px 0 0; }
-.excel-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 48px; border: 1px solid var(--violet); border-radius: 5px; padding: 12px 16px; color: var(--ink); background: var(--surface); cursor: pointer; font-size: 12px; font-weight: 800; transition: .16s ease; }
+.download-button svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.excel-panel { margin: 0; padding: 18px 28px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--violet) 4%, var(--surface)); }
+.excel-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 54px; border: 1px solid var(--violet); border-radius: 5px; padding: 14px 18px; color: var(--ink); background: var(--surface); cursor: pointer; font-size: 12px; font-weight: 800; transition: .16s ease; }
 .excel-button:hover { color: #fff; background: var(--violet); transform: translateY(-1px); }
+.excel-button:disabled { opacity: .65; cursor: wait; transform: none; }
 .excel-button svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .excel-questions { margin-top: 10px; overflow: hidden; border: 1px solid var(--line); border-left: 4px solid var(--red); border-radius: var(--radius-md); background: var(--surface); padding: 22px; }
 .excel-questions h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
@@ -236,6 +262,8 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 .excel-question-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .excel-question-actions button { border: 0; border-radius: 4px; padding: 11px 14px; cursor: pointer; font-size: 11.5px; font-weight: 700; }
 .excel-cancel { color: var(--muted); background: var(--surface-2); }
+.excel-skip { color: #fff; background: var(--violet); }
+.excel-skip:hover { background: color-mix(in srgb, var(--violet) 86%, #000); }
 .excel-submit { color: #fff; background: var(--red); }
 .excel-question-actions button:disabled { opacity: .45; cursor: wait; }
 
@@ -256,14 +284,21 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 .pending-files { display: flex; gap: 6px; overflow-x: auto; }
 .pending-file { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); font-size: 11px; white-space: nowrap; }
 .pending-file button { border: 0; background: transparent; color: var(--danger); cursor: pointer; padding: 0; }
-.question-actions { display: flex; align-items: center; justify-content: center; gap: 4px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); padding: 9px; font-size: 11px; }
-.question-actions button { border: 0; background: transparent; color: var(--red); font-weight: 700; text-decoration: underline; cursor: pointer; }
+.question-actions { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--ink); border: 1px solid color-mix(in srgb, var(--red) 55%, var(--line)); border-left: 4px solid var(--red); border-radius: 5px; background: var(--surface); padding: 10px 12px; font-size: 11px; font-weight: 700; box-shadow: 0 8px 24px rgba(18,18,57,.08); }
+.question-actions button { border: 0; border-radius: 4px; padding: 8px 12px; background: var(--red); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; transition: .16s ease; }
+.question-actions button:hover { background: #ff5a52; transform: translateY(-1px); }
 .toast { position: fixed; z-index: 30; right: 20px; bottom: 20px; max-width: 420px; border-left: 5px solid var(--red); border-radius: 4px; background: var(--navy); color: #fff; padding: 13px 16px; font-size: 12px; box-shadow: var(--shadow); }
-.drop-overlay { position: fixed; z-index: 50; inset: 12px; display: grid; place-items: center; border: 2px dashed var(--violet); border-radius: 12px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); pointer-events: none; }
-.drop-card { display: flex; flex-direction: column; align-items: center; min-width: min(420px, calc(100vw - 48px)); padding: 36px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); color: var(--ink); box-shadow: var(--shadow); text-align: center; }
-.drop-card svg { width: 42px; height: 42px; margin-bottom: 16px; padding: 9px; border-radius: 3px; background: var(--red); color: #fff; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.drop-overlay { position: fixed; z-index: 50; left: 50%; top: 50%; width: min(320px, calc(100vw - 32px)); padding: 8px; transform: translate(-50%, -50%); border: 1px dashed var(--violet); border-radius: 10px; background: color-mix(in srgb, var(--bg) 94%, transparent); box-shadow: 0 18px 60px rgba(18,18,57,.18); backdrop-filter: blur(10px); pointer-events: none; }
+.drop-card { display: flex; flex-direction: column; align-items: center; width: 100%; padding: 18px 20px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); text-align: center; }
+.drop-card svg { width: 34px; height: 34px; margin-bottom: 10px; padding: 7px; border-radius: 3px; background: var(--red); color: #fff; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .drop-card strong { font-size: 14px; font-weight: 800; }
 .drop-card span { margin-top: 8px; color: var(--muted); font-size: 10.5px; }
+.excel-loading { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--navy) 48%, transparent); backdrop-filter: blur(5px); }
+.excel-loading-card { display: flex; flex-direction: column; align-items: center; width: min(360px, 100%); border: 1px solid var(--line); border-top: 4px solid var(--violet); border-radius: 8px; padding: 30px 26px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 80px rgba(18,18,57,.28); text-align: center; }
+.excel-loading-card strong { margin-top: 17px; font-size: 16px; }
+.excel-loading-card > span:last-child { margin-top: 8px; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.excel-loading-spinner { width: 36px; height: 36px; border: 3px solid var(--line); border-top-color: var(--red); border-right-color: var(--violet); border-radius: 50%; animation: excel-spin .8s linear infinite; }
+@keyframes excel-spin { to { transform: rotate(360deg); } }
 .mobile-menu, .mobile-close, .sidebar-overlay { display: none; }
 
 @media (max-width: 920px) {
@@ -289,15 +324,15 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
   .message { grid-template-columns: 29px 1fr; gap: 10px; }
   .avatar { width: 28px; height: 28px; }
   .analysis-top { grid-template-columns: 1fr; padding: 22px 20px; }
+  .analysis-top-actions { justify-content: space-between; }
   .analysis-section { padding: 19px 20px; }
   .confidence { justify-self: start; }
   .analysis-grid { grid-template-columns: 1fr; }
   .analysis-footer { align-items: flex-start; flex-direction: column; padding: 17px 20px; }
-  .work-item { grid-template-columns: 1fr; }
-  .work-roles { grid-column: 1; }
-  .download-button { width: 100%; justify-content: center; }
+  .download-button { width: 38px; align-self: flex-end; }
+  .excel-panel { padding: 16px 20px; }
   .excel-questions { padding: 18px 15px; }
-  .excel-question-actions { flex-direction: column-reverse; }
+  .excel-question-actions { flex-direction: column; }
   .excel-question-actions button { width: 100%; }
   .composer-wrap { padding: 20px 12px 9px; }
   .question-actions { flex-wrap: wrap; }

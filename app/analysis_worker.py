@@ -206,6 +206,7 @@ class AnalysisWorker:
             sources,
             work_catalog=self.work_generator.prompt_context(),
         )
+        await self._set_current_step(run_id, "building_project_scope")
         result = analyzer_output.result
         allowed_codes = {row.code for row in catalog_rows}
         if result.project_type_code not in allowed_codes:
@@ -214,14 +215,13 @@ class AnalysisWorker:
             result.warnings.append("Модель не смогла однозначно выбрать тип из каталога")
 
         questions = material_questions(result.gaps)
-        needs_input = (
-            any(question.blocking for question in questions)
-            and not finalize_without_questions
-        )
+        needs_input = bool(questions) and not finalize_without_questions
         if warnings:
             result.warnings.extend(warnings)
         raw_result = result.model_dump(mode="json")
-        if result.project_type_code is not None:
+        # Scope, roles and effort are deliberately deferred until the user has
+        # answered at least part of the clarification form or explicitly skipped it.
+        if result.project_type_code is not None and not needs_input:
             stage_signal_codes = {
                 item.code for item in self.stage_planner.catalog.signal_catalog
             }
@@ -405,19 +405,21 @@ class AnalysisWorker:
             work_plan.contract_months = contract_months
             work_plan.contract_months_evidence = contract_evidence
             if self.settings.analysis_ai_direct_estimation:
+                await self._set_current_step(run_id, "estimating_roles_and_effort")
                 try:
-                    work_plan = await self.effort_estimator.plan_with_ai(
-                        work_plan,
-                        model=self.settings.analysis_model,
-                        reasoning_effort=self.settings.analysis_reasoning_effort,
-                        codex_cli=self.settings.codex_cli,
-                        codex_timeout_seconds=self.settings.codex_timeout_seconds,
-                        codex_auth_file=self.settings.codex_auth_file,
-                        project_summary=result.summary,
-                        assumptions=result.assumptions,
-                        warnings=result.warnings,
-                        project_facts=[fact.model_dump(mode="json") for fact in result.facts],
-                    )
+                    async with asyncio.timeout(self.settings.codex_timeout_seconds):
+                        work_plan = await self.effort_estimator.plan_with_ai(
+                            work_plan,
+                            model=self.settings.analysis_model,
+                            reasoning_effort=self.settings.analysis_reasoning_effort,
+                            codex_cli=self.settings.codex_cli,
+                            codex_timeout_seconds=self.settings.codex_timeout_seconds,
+                            codex_auth_file=self.settings.codex_auth_file,
+                            project_summary=result.summary,
+                            assumptions=result.assumptions,
+                            warnings=result.warnings,
+                            project_facts=[fact.model_dump(mode="json") for fact in result.facts],
+                        )
                 except Exception as error:
                     logger.warning(
                         "AI effort refinement failed; using deterministic estimate",
@@ -435,6 +437,8 @@ class AnalysisWorker:
             raw_result = result.model_dump(mode="json")
             raw_result["stage_plan"] = stage_plan.model_dump(mode="json")
             raw_result["work_plan"] = work_plan.model_dump(mode="json")
+
+        await self._set_current_step(run_id, "finalizing_analysis")
 
         async with self.session_factory.begin() as session:
             run = await session.get(AnalysisRun, run_id, with_for_update=True)
@@ -471,6 +475,12 @@ class AnalysisWorker:
             run.status = "requires_input" if needs_input else "ready"
             run.current_step = "waiting_for_material_answers" if needs_input else "completed"
             run.model_name = self.settings.analysis_model
+
+    async def _set_current_step(self, run_id: uuid.UUID, step: str) -> None:
+        async with self.session_factory.begin() as session:
+            run = await session.get(AnalysisRun, run_id, with_for_update=True)
+            if run is not None and run.status == "analyzing":
+                run.current_step = step
 
     async def _extract(
         self, document: Document, *, force: bool
