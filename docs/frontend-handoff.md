@@ -6,7 +6,7 @@
 - Docker Desktop с Docker Compose;
 - свободные порты `8000` и `55432`;
 - интернет при первом запуске для скачивания образов и ML-моделей;
-- ключ OpenAI для смысловой классификации.
+- установленный и авторизованный Codex CLI для смысловой классификации.
 
 Python, PostgreSQL, Java, FFmpeg, Tesseract и библиотеки распознавания локально
 устанавливать не нужно: они находятся в Docker-образе.
@@ -19,7 +19,7 @@ Copy-Item .env.example .env
 
 1. заменить `POSTGRES_PASSWORD` на длинный случайный пароль;
 2. указать тот же пароль внутри `PROJECTILE_DATABASE_URL`;
-3. заполнить `KEY_OPENAI`;
+3. указать `PROJECTILE_CODEX_HOME` — путь к каталогу авторизованного Codex CLI;
 4. при необходимости добавить origin frontend в `PROJECTILE_CORS_ORIGINS`.
 
 Файл `.env` не коммитится. Значения из него нельзя вставлять во frontend-код,
@@ -52,7 +52,10 @@ PPTX обычно извлекаются быстро; сканы и аудио 
 Источник истины — работающая схема `/openapi.json` и модели в
 `app/schemas.py`. Не придумывать отсутствующие endpoint-ы.
 
-1. `POST /api/v1/projects` с `{ "name": "..." }`. Сохранить `id` проекта.
+1. Чатовый сценарий использует `POST /api/v1/chats`, `GET /api/v1/chats` и
+   `GET /api/v1/chats/{chatId}`. Идентификатор чата совпадает с `projectId`.
+   Сообщение отправляется через `POST /api/v1/chats/{chatId}/messages` с
+   `{ "content": "..." }`; ответ содержит сообщение и новый `run_id` анализа.
 2. `POST /api/v1/projects/{projectId}/documents` как `multipart/form-data`.
    Каждый файл добавляется повторяемым полем `files`. Для загрузки папки для
    каждого файла добавить соответствующее поле `relative_paths` в том же порядке.
@@ -72,9 +75,15 @@ PPTX обычно извлекаются быстро; сканы и аудио 
    неоднозначны. Уверенность отображается только как `low`, `medium`, `high`.
 7. При перезагрузке страницы восстановить последний запуск через
    `GET /api/v1/projects/{projectId}/analyses/latest`.
+8. Ответ на уточняющие вопросы отправляется через
+   `POST /api/v1/projects/{projectId}/analysis-runs/{runId}/answers` с
+   `{ "content": "..." }`. Endpoint создаёт новый запуск анализа.
+9. Пропуск вопросов: `POST /api/v1/projects/{projectId}/analysis-runs/{runId}/questions/skip`.
+10. PDF готового результата:
+    `GET /api/v1/projects/{projectId}/analysis-runs/{runId}/report.pdf`.
 
-Endpoint для отправки ответов на `questions` пока не реализован. Интерфейс должен
-показывать вопросы, но не вызывать выдуманный `/answers`.
+Ответы принимаются только для запуска в статусе `requires_input`; пропустить вопросы
+можно только в том же статусе. `ready` и `requires_input` доступны для скачивания PDF.
 
 Пример загрузки:
 
@@ -133,7 +142,7 @@ endpoint-ы не придумывай.
    падения интерфейса. requires_input является успешным терминальным результатом,
    а не ошибкой.
 8. Сохраняй русские имена файлов и UTF-8. Добавь состояния загрузки, пустого
-   проекта, сетевой ошибки и повторной отправки. Не помещай KEY_OPENAI,
+   проекта, сетевой ошибки и повторной отправки. Не помещай `.codex/auth.json`,
    PROJECTILE_DATABASE_URL или пароль PostgreSQL во frontend.
 9. Базовый URL backend бери из frontend env-переменной. Для локальной разработки
    используй http://localhost:8000.

@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0.0",
+  "stage_definitions_file": "data/project-stage-templates.json",
   "catalog": "MONS company project types",
   "language": "ru",
   "sources": [
@@ -213,6 +214,28 @@
             "миграция домена",
             "миграция пользователей",
             "миграция виртуализации"
+          ]
+        },
+        {
+          "code": "SUP_Custom_Development",
+          "name": "Заказная разработка и доработка ПО",
+          "details": "Разработка нового прикладного решения или существенная доработка существующего: бизнес-логика, интерфейсы, API, интеграции, миграция данных и отчётность.",
+          "offer_category": "services",
+          "offer_category_source": "Расширение каталога для универсальной оценки",
+          "typical_duration_months": 4,
+          "engagement_model": "one_off",
+          "engagement_model_source": "Разовая",
+          "available_from": null,
+          "classification_hints": [
+            "заказная разработка",
+            "разработка приложения",
+            "разработка web-портала",
+            "frontend",
+            "backend",
+            "разработка API",
+            "разработка отчётности",
+            "машинное обучение",
+            "существенная доработка ПО"
           ]
         },
         {

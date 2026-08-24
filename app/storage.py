@@ -123,6 +123,29 @@ class LocalFileStorage:
         os.replace(staged.temp_path, destination)
         return PersistedFile(absolute_path=destination, storage_uri=relative.as_posix())
 
+    def persist_bytes(
+        self,
+        content: bytes,
+        project_id: uuid.UUID,
+        document_id: uuid.UUID,
+        version: int,
+        filename: str,
+    ) -> PersistedFile:
+        """Persist a generated artifact using the same project document layout."""
+        relative = (
+            PurePosixPath("documents")
+            / str(project_id)
+            / str(document_id)
+            / f"v{version}"
+            / safe_filename(filename)
+        )
+        destination = self.root.joinpath(*relative.parts)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".part")
+        temporary.write_bytes(content)
+        os.replace(temporary, destination)
+        return PersistedFile(absolute_path=destination, storage_uri=relative.as_posix())
+
     @staticmethod
     def discard(staged: StagedUpload) -> None:
         staged.temp_path.unlink(missing_ok=True)

@@ -30,7 +30,7 @@ export function formatApiError(error) {
 
 async function request(apiBase, path, options = {}) {
   const response = await fetch(`${normalizeApiBase(apiBase)}${path}`, options);
-  if (response.ok) return response.json();
+  if (response.ok) return response.status === 204 ? null : response.json();
 
   let payload;
   try {
@@ -56,6 +56,104 @@ export function createProject(apiBase, name) {
 
 export function getHealth(apiBase, signal) {
   return request(apiBase, "/health", { signal });
+}
+
+export function createChat(apiBase, name) {
+  return request(apiBase, "/api/v1/chats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(name ? { name } : {}),
+  });
+}
+
+export function listChats(apiBase, signal) {
+  return request(apiBase, "/api/v1/chats", { signal });
+}
+
+export function getProjectTypes(apiBase, signal) {
+  return request(apiBase, "/api/v1/project-types", { signal });
+}
+
+export function getChat(apiBase, chatId, signal) {
+  return request(apiBase, `/api/v1/chats/${chatId}`, { signal });
+}
+
+export function updateChat(apiBase, chatId, name) {
+  return request(apiBase, `/api/v1/chats/${chatId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteChat(apiBase, chatId) {
+  return request(apiBase, `/api/v1/chats/${chatId}`, { method: "DELETE" });
+}
+
+export function sendChatMessage(apiBase, chatId, content) {
+  return request(apiBase, `/api/v1/chats/${chatId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function answerAnalysisQuestions(apiBase, projectId, runId, content) {
+  return request(apiBase, `/api/v1/projects/${projectId}/analysis-runs/${runId}/answers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function skipAnalysisQuestions(apiBase, projectId, runId) {
+  return request(apiBase, `/api/v1/projects/${projectId}/analysis-runs/${runId}/questions/skip`, {
+    method: "POST",
+  });
+}
+
+export function analysisReportUrl(apiBase, projectId, runId, theme = "light") {
+  const reportTheme = theme === "dark" ? "dark" : "light";
+  return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.pdf?theme=${reportTheme}`;
+}
+
+export function analysisExcelUrl(apiBase, projectId, runId) {
+  return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.xlsx`;
+}
+
+export function updateAnalysisProjectType(apiBase, projectId, runId, projectTypeCode) {
+  return request(apiBase, `/api/v1/projects/${projectId}/analysis-runs/${runId}/project-type`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_type_code: projectTypeCode }),
+  });
+}
+
+export async function downloadAnalysisExcel(apiBase, projectId, runId) {
+  const response = await fetch(analysisExcelUrl(apiBase, projectId, runId));
+  if (!response.ok) {
+    let payload;
+    try { payload = await response.json(); } catch { payload = null; }
+    const detail = payload?.detail ?? payload;
+    throw new ApiError(
+      typeof detail === "string" ? detail : `Сервер вернул ошибку ${response.status}`,
+      response.status,
+      detail,
+    );
+  }
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plainName = disposition.match(/filename="([^"]+)"/i)?.[1];
+  let filename = plainName || "projectile-estimate.xlsx";
+  if (encodedName) {
+    try { filename = decodeURIComponent(encodedName); } catch { filename = plainName || filename; }
+  }
+  return {
+    blob: await response.blob(),
+    filename,
+    attached: response.headers.get("X-Projectile-Artifact-Attached") === "true",
+    documentId: response.headers.get("X-Projectile-Artifact-Document-Id"),
+  };
 }
 
 export function buildUploadFormData(files) {

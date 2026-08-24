@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.work_contracts import ProjectSpecificWork
+
 Confidence = Literal["low", "medium", "high"]
 GapImpact = Literal["low", "medium", "high", "critical"]
 
@@ -34,9 +36,20 @@ class DataIssue(BaseModel):
     recommended_action: str | None = None
 
 
+class StageSignalEvidence(BaseModel):
+    code: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    source_document_ids: list[str] = Field(default_factory=list)
+
+
 class ModelAnalysis(BaseModel):
+    project_name: str | None = Field(default=None, min_length=1, max_length=120)
     project_type_code: str | None = None
     confidence: Confidence
+    lifecycle_state: Literal["new_solution", "existing_solution", "mixed", "unknown"] = "unknown"
+    delivery_intent: Literal[
+        "support", "change", "implementation", "integration", "audit", "mixed", "unknown"
+    ] = "unknown"
     summary: str = Field(min_length=1)
     rationale: str = Field(min_length=1)
     facts: list[ExtractedFact] = Field(default_factory=list)
@@ -44,6 +57,15 @@ class ModelAnalysis(BaseModel):
     issues: list[DataIssue] = Field(default_factory=list)
     gaps: list[DataGap] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    stage_signals: list[StageSignalEvidence] = Field(default_factory=list)
+    # The model proposes the scope; catalogues validate the proposal and provide
+    # a safe fallback when the model or API is unavailable.
+    include_stage_codes: list[str] = Field(default_factory=list)
+    exclude_stage_codes: list[str] = Field(default_factory=list)
+    include_work_codes: list[str] = Field(default_factory=list)
+    exclude_work_codes: list[str] = Field(default_factory=list)
+    scope_mode: Literal["baseline", "confirmed_only"] = "baseline"
+    project_specific_works: list[ProjectSpecificWork] = Field(default_factory=list)
 
 
 class DocumentDigest(BaseModel):
@@ -67,17 +89,17 @@ class MaterialQuestion(BaseModel):
     blocking: bool
 
 
-def material_questions(gaps: list[DataGap], limit: int = 5) -> list[MaterialQuestion]:
-    """Keep only questions whose answers can materially alter the estimate."""
+def material_questions(gaps: list[DataGap], limit: int | None = None) -> list[MaterialQuestion]:
+    """Return every explicit missing-information question without duplicates."""
     result: list[MaterialQuestion] = []
+    seen: set[tuple[str, str]] = set()
     for gap in gaps:
-        if (
-            not gap.question
-            or not gap.changes_estimate
-            or gap.impact not in {"high", "critical"}
-            or (gap.can_use_assumption and not gap.blocking)
-        ):
+        if not gap.question:
             continue
+        key = (gap.code.strip().casefold(), gap.question.strip().casefold())
+        if key in seen:
+            continue
+        seen.add(key)
         result.append(
             MaterialQuestion(
                 code=gap.code,
@@ -86,6 +108,6 @@ def material_questions(gaps: list[DataGap], limit: int = 5) -> list[MaterialQues
                 blocking=gap.blocking,
             )
         )
-        if len(result) == limit:
+        if limit is not None and len(result) >= limit:
             break
     return result

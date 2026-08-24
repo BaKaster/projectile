@@ -1,0 +1,221 @@
+{
+  "schema_version": "1.0.0",
+  "base_path": ".",
+  "path_format": "repo-relative-posix",
+  "description": "Проекты с исходным заданием и готовым расчётом для регрессионного сравнения системы. Клиентский архив хранится локально и не публикуется в Git.",
+  "cases": [
+    {
+      "id": "bonduelle_l1_support",
+      "project_name": "Бондюэль — организация L1 поддержки",
+      "scenario": "service_desk_l1",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Бондюэль/Техническое задание на организацию поддержки v1.31.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Бондюэль/Расчет_стоимости_L1_Бондюэль_2025_10_09_v3_отпр.xlsx",
+      "comparison_metric": {
+        "description": "Разовые работы плюс шесть месяцев обслуживания без НДС",
+        "components": [
+          {
+            "sheet": "ИТОГ_NEW",
+            "cell": "C7"
+          },
+          {
+            "sheet": "ИТОГ_NEW",
+            "cell": "B11",
+            "multiplier": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "voenkomaty_techforce",
+      "project_name": "Военкоматы ТехФорс",
+      "scenario": "implementation",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Военкоматы ТехФорс/ТЗ_финал.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Военкоматы ТехФорс/расчет для КПv.6.xlsx",
+      "comparison_metric": {
+        "description": "Итог работ по варианту v3",
+        "components": [{"sheet": "v3", "cell": "F42"}]
+      }
+    },
+    {
+      "id": "coordination_center_support",
+      "project_name": "Координационный центр РФ — сопровождение ИС",
+      "scenario": "application_support",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Кордианационный центр РФ/Техническое задание на оказание услуг сервисного сопровождения информационных систем.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Кордианационный центр РФ/Центр национальных проектов_Оценка v1.xlsx",
+      "comparison_metric": {
+        "description": "Годовая стоимость по заявочной модели без НДС",
+        "components": [{"sheet": "Расчет по заявкам", "cell": "C50"}]
+      }
+    },
+    {
+      "id": "metro_soti",
+      "project_name": "Метро — SOTI",
+      "scenario": "it_implementation",
+      "comparison_quality": "non_comparable_currency",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Метро/ТЗ_SOTI.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Метро/Наша стоимость Метро.xlsx",
+      "comparison_note": "Референс рассчитан в USD и содержит несколько коммерческих вариантов; без согласованного курса прямое сравнение с рублёвым шаблоном некорректно."
+    },
+    {
+      "id": "severstal_support",
+      "project_name": "СеверСталь — техническая поддержка",
+      "scenario": "technical_support",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/СеверСталь/Техническая_поддержка_ТОиРМ_Шаблон.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/СеверСталь/Расчёт для SALE TP_SeverStal.xlsx",
+      "comparison_metric": {
+        "description": "Шесть месяцев наиболее полного варианта выездной поддержки без НДС",
+        "components": [{"sheet": "Лист1", "cell": "D10", "multiplier": 6}]
+      }
+    },
+    {
+      "id": "fkr_moscow",
+      "project_name": "ФКР Москвы",
+      "scenario": "complex_project",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/ФКР Москвы/2. ТЗ ФКР 2025 (11.11.2024).docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/ФКР Москвы/Расчёт для ФКР_17.11.2025.xlsx",
+      "comparison_metric": {
+        "description": "Годовой итог без НДС",
+        "components": [{"sheet": "основа", "cell": "H94"}]
+      }
+    },
+    {
+      "id": "advanced_farming_center_audit",
+      "project_name": "Центр передового земледелия — аудит ИТ",
+      "scenario": "it_audit",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/!Аудиты/Центр передового земеледелия/Запрос коммерческого предложения на проведение аудита ИТ-инфраструктуры.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/!Аудиты/Центр передового земеледелия/Расчет аудита центр земледелия_v2.xlsx",
+      "comparison_metric": {
+        "description": "Итог аудита",
+        "components": [{"sheet": "Лист1", "cell": "J22"}]
+      }
+    },
+    {
+      "id": "elma365_lenta",
+      "project_name": "Лента — ELMA365",
+      "scenario": "application_implementation",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/CRM-ELMA365/Лента/Концепция_решения_ТЗ_для_этапа_2.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/CRM-ELMA365/Лента/Оценка работ по ELMA365_final.xlsx",
+      "comparison_metric": {
+        "description": "Итог внедрения",
+        "components": [{"sheet": "Sheet1", "cell": "E45"}]
+      }
+    },
+    {
+      "id": "ikon_edr",
+      "project_name": "Айкон НокианТайрес — EDR",
+      "scenario": "security_implementation",
+      "comparison_quality": "non_comparable_external_costs",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Айкон НокианТайрес/EDR/Техническое задание.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Айкон НокианТайрес/EDR/EDR наш вход.xlsx",
+      "comparison_metric": {
+        "description": "Стоимость лицензий заказчику без НДС",
+        "includes_vat": true,
+        "vat_rate": 0.2,
+        "components": [{"sheet": "Sheet1", "cell": "O4"}]
+      }
+    },
+    {
+      "id": "baumana_ai",
+      "project_name": "МГТУ Баумана — AI",
+      "scenario": "custom_development",
+      "comparison_quality": "non_comparable_missing_roles",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Баумана/Расчёты/AI/Приложение_№1_Техническое_задание_на_оказание_услуг_по_разработке.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Баумана/Расчёты/AI/ИТ Баумана Расчёт_09.04.26.xlsx",
+      "comparison_metric": {
+        "description": "Итог к продаже с рисками",
+        "components": [{"sheet": "Ставки специалистов", "cell": "B9"}]
+      },
+      "comparison_note": "В текущем каталоге ролей отсутствуют разработчики, QA и data/ML-роли; точная оценка заказной разработки невозможна до утверждения ставок этих ролей."
+    },
+    {
+      "id": "ingosstrakh_captcha",
+      "project_name": "Ингосстрах — Captcha",
+      "scenario": "it_service",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/ИНГОССТРАХ/ТО 2234-ДИТ-Captcha/ТЗ - ТО 2234-ДИТ-Captcha.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/ИНГОССТРАХ/ТО 2234-ДИТ-Captcha/Расчёт КП от исполнителя - ТО 2234-ДИТ-Captcha.xlsx",
+      "comparison_metric": {
+        "description": "Стоимость работ по внедрению без НДС",
+        "includes_vat": true,
+        "vat_rate": 0.2,
+        "components": [{"sheet": "КП", "cell": "M33"}]
+      },
+      "comparison_note": "Пятилетняя поддержка в референсе является отдельным коммерческим блоком; сравнение использует только внедрение."
+    },
+    {
+      "id": "medsi_servers_ufa",
+      "project_name": "Медси — серверное и сетевое оборудование Уфа",
+      "scenario": "hardware_supply",
+      "comparison_quality": "non_comparable_external_costs",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Медси/Тендер Уфа Сервера/Этап №6/20241025_ТЗ_серверное,сетевое_оборудование (ред 2).docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Медси/Тендер Уфа Сервера/Этап №6/Расчёт от Димы 31.10.24.xlsx",
+      "comparison_metric": {
+        "description": "Итог поставки в рублях",
+        "components": [{"sheet": "v1", "cell": "Q2"}]
+      },
+      "comparison_note": "Цена оборудования отсутствует в ТЗ и не может быть восстановлена из трудозатрат; необходима котировка поставщика."
+    },
+    {
+      "id": "rostech_infrastructure_audit",
+      "project_name": "Ростех — аудит инфраструктуры ИБ",
+      "scenario": "security_audit",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/Ростех/ИБ/Аудит Инфры/ТЗ Аудит.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/Ростех/ИБ/Аудит Инфры/Оценка Аудит от MONS_v2_21.07.2025.xlsx",
+      "comparison_metric": {
+        "description": "Итог аудита без НДС",
+        "components": [{"sheet": "Sheet8 (2)", "cell": "E32"}]
+      }
+    },
+    {
+      "id": "sbd_new_office",
+      "project_name": "СБД — новый офис",
+      "scenario": "office_implementation",
+      "comparison_quality": "partial_mixed_costs",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/СБД/Офис 15 чел/Техническое задание Новый офис.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/СБД/Офис 15 чел/Расчет стоимости проекта для СБД.xlsx",
+      "comparison_metric": {
+        "description": "Разовые работы с целевой маржой плюс год сервисов без НДС",
+        "components": [
+          {"sheet": "Расчет стоимости разовых работ ", "cell": "F19"},
+          {"sheet": "Расчет стоимости биллинга в ЯО", "cell": "L13"}
+        ]
+      }
+    },
+    {
+      "id": "sberuniversity_monitoring",
+      "project_name": "СберУнивер — управление мониторингом",
+      "scenario": "technical_support",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/СберУнивер/Мониторинг/ТЗ_на_поддержку_технологического_сервиса_Управление_мониторингом.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/СберУнивер/Мониторинг/Расчёт для SALE Monitoring.xlsx",
+      "comparison_metric": {
+        "description": "Двенадцать месяцев команды поддержки",
+        "components": [{"sheet": "Расчет", "cell": "G9", "multiplier": 12}]
+      }
+    },
+    {
+      "id": "uits_flant",
+      "project_name": "УИТС — Флант",
+      "scenario": "supplier_service",
+      "comparison_quality": "non_comparable_supplier_price",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/УИТС/Флант/Приложение 3 к запросу цен.docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/УИТС/Флант/Расчёт.xlsx",
+      "comparison_metric": {
+        "description": "Первый вариант предложения без НДС",
+        "components": [{"sheet": "Sheet1", "cell": "K6"}]
+      },
+      "comparison_note": "Референс содержит три предложения поставщиков; выбран первый вариант, различие между вариантами менее 1%."
+    },
+    {
+      "id": "zndh_smartmeal_reporting",
+      "project_name": "ЗНДХ — Smart Meal отчётность",
+      "scenario": "custom_development",
+      "comparison_quality": "non_comparable_external_costs",
+      "specification_path": "Данные для стажёров/Данные для стажёров_/проекты/ЗНДХ/СмартМилл/Отчетность_питание/ТЗ_ОТЧЕТЫ_ЗНДХ_260429(ИТОГ).docx",
+      "calculated_excel_path": "Данные для стажёров/Данные для стажёров_/проекты/ЗНДХ/СмартМилл/Отчетность_питание/Расчёт в клиента.xlsx",
+      "comparison_metric": {
+        "description": "Итог лицензий и услуг без НДС",
+        "components": [{"sheet": "Sheet1", "cell": "K9"}]
+      },
+      "comparison_note": "Референс включает лицензии, цены которых отсутствуют в ТЗ; трудовая и лицензионная части должны анализироваться отдельно."
+    }
+  ]
+}

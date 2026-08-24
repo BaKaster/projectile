@@ -11,3 +11,6 @@ __pycache__/
 htmlcov/
 storage/
 postgres_data/
+/outputs/
+/tmp/
+/.codex/

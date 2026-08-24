@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.analysis_contracts import DataGap, material_questions
-from app.analyzer import OpenAIProjectAnalyzer, SourceText
+from app.analyzer import CodexProjectAnalyzer, SourceText, _source_role
 from app.recognition import DocumentRecognizer, UnsafeArchiveError
 
 
@@ -21,7 +21,7 @@ def _recognizer() -> DocumentRecognizer:
     )
 
 
-def test_material_questions_excludes_low_value_and_safe_assumptions() -> None:
+def test_material_questions_returns_every_explicit_question() -> None:
     questions = material_questions(
         [
             DataGap(
@@ -54,7 +54,7 @@ def test_material_questions_excludes_low_value_and_safe_assumptions() -> None:
             ),
         ]
     )
-    assert [item.code for item in questions] == ["users"]
+    assert [item.code for item in questions] == ["users", "color", "retention"]
 
 
 def test_plain_russian_text_is_recognized(tmp_path: Path) -> None:
@@ -131,7 +131,7 @@ def test_zip_is_recognized_and_path_traversal_is_rejected(tmp_path: Path) -> Non
 
 
 def test_model_input_has_document_ids_and_is_bounded() -> None:
-    analyzer = OpenAIProjectAnalyzer("not-used", "test-model", 10_100)
+    analyzer = CodexProjectAnalyzer("test-model", 10_100)
     document_id = str(uuid.uuid4())
     prompt = analyzer._build_input(
         [{"code": "SUP_L1", "name": "Поддержка"}],
@@ -140,6 +140,10 @@ def test_model_input_has_document_ids_and_is_bounded() -> None:
     assert document_id in prompt
     assert len(prompt) <= 10_100
     assert 'role="customer_requirements"' in prompt
+
+
+def test_generated_excel_has_distinct_source_role() -> None:
+    assert _source_role("generated/current-estimate.xlsx") == "generated_estimate"
 
 
 def test_spreadsheet_formula_errors_are_preserved(tmp_path: Path) -> None:

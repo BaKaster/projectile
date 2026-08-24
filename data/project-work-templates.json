@@ -1,0 +1,713 @@
+{
+  "schema_version": "1.0.0",
+  "status": "active",
+  "language": "ru",
+  "catalog": "MONS project stage work templates",
+  "depends_on": {
+    "project_types_file": "data/project-types.json",
+    "stage_templates_file": "data/project-stage-templates.json"
+  },
+  "purpose": "Контекст для формирования состава работ внутри уже определённых этапов проекта. Файл не является сметой и не должен использоваться как фиксированный чек-лист без проверки ТЗ.",
+  "field_notes": {
+    "inclusion": "always — типовая обязательная работа; conditional — включается только при наличии указанных signals/условий; optional — вариант расширенного объёма.",
+    "outputs": "Проверяемые результаты работы, пригодные для привязки к приёмке.",
+    "estimation_drivers": "Параметры, от которых должна зависеть оценка, а не готовые нормативы трудозатрат.",
+    "evidence": "company — подтверждено корпоративными примерами; industry — подтверждено внешней методикой; synthesized — обобщение обоих источников."
+  },
+  "generation_policy": {
+    "inherit_template_works": true,
+    "apply_project_type_specialization": true,
+    "do_not_add_conditional_work_without_signal": true,
+    "separate_one_off_and_recurring_work": true,
+    "separate_licenses_hardware_and_services": true,
+    "require_traceability_to_scope": true,
+    "require_acceptance_output_for_each_stage": true,
+    "ambiguous_scope_result": "requires_input",
+    "rules": [
+      "Сначала выбрать профиль project_type_code и связанный template_code.",
+      "Добавить работы inclusion=always, затем только подтверждённые conditional/optional работы.",
+      "Применить additions и exclusions профиля типа проекта.",
+      "Декомпозировать повторяемые работы по объектам, площадкам, системам, конфигурационным единицам или волнам.",
+      "Не переносить в состав работ коммерческие активности подрядчика, если они выполняются заказчиком или вендором; вместо этого фиксировать зависимость и контрольную точку.",
+      "Не считать управление проектом как процент автоматически: оценивать по длительности, числу потоков, площадок, подрядчиков и ритму статусов."
+    ]
+  },
+  "signal_extensions": [
+    {"code": "data_migration", "description": "Перенос данных с преобразованием и сверкой."},
+    {"code": "rollback_required", "description": "Нужен формальный план отката и критерии его запуска."},
+    {"code": "vendor_support", "description": "В исполнении участвует поддержка производителя."},
+    {"code": "regulated_scope", "description": "Есть регуляторные требования, аттестация или сертификация."},
+    {"code": "custom_development", "description": "Нужна разработка или доработка программного кода."},
+    {"code": "onsite_work", "description": "Нужны выезды, монтаж или обследование на площадке."},
+    {"code": "high_availability", "description": "Требуются кластеризация, резервирование или георезерв."},
+    {"code": "integration", "description": "Нужны интеграции с внешними системами."},
+    {"code": "recurring_changes", "description": "Подтверждён регулярный месячный поток RFC/изменений, отдельный от разового внедрения."}
+  ],
+  "work_templates": [
+    {
+      "template_code": "audit",
+      "stages": [
+        {"stage_code": "audit_scope", "works": [
+          {"code": "confirm_objectives", "name": "Уточнить цели, объекты и ожидаемые решения по итогам аудита", "inclusion": "always", "outputs": ["Согласованные цели и вопросы аудита"], "estimation_drivers": ["число бизнес-целей", "число владельцев"], "evidence": "synthesized"},
+          {"code": "define_scope_boundaries", "name": "Определить границы, исключения, площадки, системы и период анализа", "inclusion": "always", "outputs": ["Матрица охвата и исключений"], "estimation_drivers": ["площадки", "системы", "контуры"], "evidence": "synthesized"},
+          {"code": "prepare_data_request", "name": "Подготовить запрос документов, выгрузок, доступов и интервью", "inclusion": "always", "outputs": ["Перечень исходных данных", "План интервью"], "estimation_drivers": ["домены обследования", "стейкхолдеры"], "evidence": "company"},
+          {"code": "approve_assessment_rules", "name": "Согласовать критерии оценки, шкалы рисков и правила работы с данными", "inclusion": "always", "outputs": ["Методика и правила проведения"], "estimation_drivers": ["число стандартов", "чувствительность данных"], "evidence": "industry"}
+        ]},
+        {"stage_code": "evidence_collection", "works": [
+          {"code": "review_documentation", "name": "Собрать и проанализировать схемы, регламенты, договоры и эксплуатационную документацию", "inclusion": "always", "outputs": ["Реестр документов", "Перечень пробелов"], "estimation_drivers": ["число документов", "качество документации"], "evidence": "company"},
+          {"code": "conduct_interviews", "name": "Провести интервью и анкетирование владельцев процессов и технических специалистов", "inclusion": "always", "outputs": ["Протоколы интервью"], "estimation_drivers": ["число интервью", "число ролей"], "evidence": "company"},
+          {"code": "inventory_assets", "name": "Инвентаризировать активы, конфигурационные единицы, сервисы и зависимости", "inclusion": "always", "outputs": ["Инвентаризационная ведомость", "Карта зависимостей"], "estimation_drivers": ["КЕ", "площадки", "домены технологий"], "evidence": "company"},
+          {"code": "collect_technical_evidence", "name": "Получить конфигурации, журналы, метрики, результаты мониторинга и резервирования", "inclusion": "always", "outputs": ["Пакет технических свидетельств"], "estimation_drivers": ["системы", "источники данных", "период"], "evidence": "synthesized"},
+          {"code": "onsite_survey", "name": "Провести обследование на площадках", "inclusion": "conditional", "signals": ["onsite_work", "multi_site"], "outputs": ["Акты обследования площадок"], "estimation_drivers": ["площадки", "маршруты", "объекты"], "evidence": "company"}
+        ]},
+        {"stage_code": "current_state_assessment", "works": [
+          {"code": "assess_architecture", "name": "Оценить архитектуру, топологию, производительность, доступность и масштабируемость", "inclusion": "always", "outputs": ["Описание AS IS", "Архитектурные наблюдения"], "estimation_drivers": ["архитектурные домены", "сервисы"], "evidence": "company"},
+          {"code": "assess_operations", "name": "Оценить процессы эксплуатации, поддержки, изменений, резервирования и восстановления", "inclusion": "always", "outputs": ["Оценка эксплуатационной зрелости"], "estimation_drivers": ["процессы", "команды", "поставщики"], "evidence": "synthesized"},
+          {"code": "assess_security_controls", "name": "Оценить управление доступом, конфигурации защиты, журналы и реагирование", "inclusion": "conditional", "signals": ["security_approval", "regulated_scope"], "outputs": ["Оценка мер защиты"], "estimation_drivers": ["контроли", "СЗИ", "контуры"], "evidence": "synthesized"},
+          {"code": "scan_vulnerabilities", "name": "Провести согласованное сканирование уязвимостей без нарушения доступности", "inclusion": "optional", "signals": ["regulated_scope"], "outputs": ["Отчёт по уязвимостям"], "estimation_drivers": ["IP-адреса", "узлы", "периметры"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "gap_risk_assessment", "works": [
+          {"code": "compare_requirements", "name": "Сопоставить фактическое состояние с требованиями, практиками и целевыми уровнями", "inclusion": "always", "outputs": ["Gap-матрица"], "estimation_drivers": ["число требований", "области контроля"], "evidence": "synthesized"},
+          {"code": "validate_findings", "name": "Проверить наблюдения со владельцами и привязать их к свидетельствам", "inclusion": "always", "outputs": ["Валидированный реестр наблюдений"], "estimation_drivers": ["наблюдения", "владельцы"], "evidence": "industry"},
+          {"code": "assess_risks", "name": "Оценить вероятность, влияние, критичность и владельцев рисков", "inclusion": "always", "outputs": ["Реестр и карта рисков"], "estimation_drivers": ["наблюдения", "активы", "шкалы риска"], "evidence": "company"},
+          {"code": "identify_quick_wins", "name": "Выделить критические отклонения и быстрые улучшения", "inclusion": "always", "outputs": ["Приоритетный список действий"], "estimation_drivers": ["риски", "ограничения"], "evidence": "company"}
+        ]},
+        {"stage_code": "recommendations_roadmap", "works": [
+          {"code": "develop_recommendations", "name": "Разработать технические и организационные рекомендации по каждому значимому наблюдению", "inclusion": "always", "outputs": ["Каталог рекомендаций"], "estimation_drivers": ["значимые наблюдения", "домены"], "evidence": "company"},
+          {"code": "design_target_outline", "name": "Сформировать верхнеуровневую целевую модель", "inclusion": "conditional", "signals": ["migration", "installation"], "outputs": ["Схема TO BE"], "estimation_drivers": ["домены", "варианты"], "evidence": "company"},
+          {"code": "prioritize_initiatives", "name": "Приоритизировать инициативы по риску, эффекту, стоимости и зависимостям", "inclusion": "always", "outputs": ["Приоритеты и зависимости"], "estimation_drivers": ["инициативы", "критерии"], "evidence": "company"},
+          {"code": "build_roadmap", "name": "Сформировать дорожную карту, очередность и верхнеуровневую оценку ресурсов", "inclusion": "always", "outputs": ["Roadmap"], "estimation_drivers": ["инициативы", "волны", "ограничения"], "evidence": "company"}
+        ]},
+        {"stage_code": "audit_report", "works": [
+          {"code": "prepare_report", "name": "Подготовить итоговый отчёт с методикой, свидетельствами, выводами и рекомендациями", "inclusion": "always", "outputs": ["Итоговый отчёт"], "estimation_drivers": ["разделы", "наблюдения", "приложения"], "evidence": "synthesized"},
+          {"code": "prepare_management_summary", "name": "Подготовить резюме и презентацию для руководства", "inclusion": "always", "outputs": ["Executive summary", "Презентация"], "estimation_drivers": ["аудитории", "решения"], "evidence": "company"},
+          {"code": "review_and_finalize", "name": "Провести обсуждение, обработать замечания и зафиксировать принятие результатов", "inclusion": "always", "outputs": ["Реестр замечаний", "Согласованная версия"], "estimation_drivers": ["циклы согласования", "стейкхолдеры"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "audit_governance", "works": [
+          {"code": "manage_audit", "name": "Вести план, статусы, риски, доступы, качество и коммуникации аудита", "inclusion": "always", "outputs": ["План", "Статусы", "Реестр рисков и решений"], "estimation_drivers": ["длительность", "команда", "площадки", "ритм статусов"], "evidence": "company"}
+        ]}
+      ]
+    },
+    {
+      "template_code": "consulting_design",
+      "stages": [
+        {"stage_code": "consulting_scope", "works": [
+          {"code": "frame_problem", "name": "Уточнить бизнес-задачу, критерии успеха и принимаемые решения", "inclusion": "always", "outputs": ["Постановка задачи", "Критерии успеха"], "estimation_drivers": ["цели", "стейкхолдеры"], "evidence": "synthesized"},
+          {"code": "define_design_scope", "name": "Зафиксировать границы проектирования, допущения, ограничения и состав документов", "inclusion": "always", "outputs": ["Scope и перечень deliverables"], "estimation_drivers": ["домены", "документы"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "consulting_discovery", "works": [
+          {"code": "collect_requirements", "name": "Собрать функциональные, нефункциональные, эксплуатационные и ИБ-требования", "inclusion": "always", "outputs": ["Каталог требований"], "estimation_drivers": ["системы", "интервью", "требования"], "evidence": "synthesized"},
+          {"code": "document_current_state", "name": "Описать AS IS, зависимости, ограничения и проблемные точки", "inclusion": "always", "outputs": ["Модель AS IS"], "estimation_drivers": ["домены", "интеграции", "площадки"], "evidence": "company"},
+          {"code": "define_design_principles", "name": "Согласовать архитектурные принципы и критерии сравнения", "inclusion": "always", "outputs": ["Принципы и критерии"], "estimation_drivers": ["критерии", "политики"], "evidence": "industry"}
+        ]},
+        {"stage_code": "options_design", "works": [
+          {"code": "develop_options", "name": "Разработать варианты решения и модели эксплуатации", "inclusion": "always", "outputs": ["Описание вариантов"], "estimation_drivers": ["варианты", "архитектурные домены"], "evidence": "synthesized"},
+          {"code": "compare_options", "name": "Сравнить варианты по соответствию, риску, стоимости владения и реализуемости", "inclusion": "always", "outputs": ["Матрица сравнения", "Рекомендованный вариант"], "estimation_drivers": ["варианты", "критерии"], "evidence": "industry"},
+          {"code": "validate_assumptions", "name": "Проверить ключевые гипотезы расчётами, лабораторной проверкой или консультацией вендора", "inclusion": "conditional", "signals": ["pilot", "vendor_support"], "outputs": ["Результаты проверки гипотез"], "estimation_drivers": ["гипотезы", "тесты"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "target_solution", "works": [
+          {"code": "design_target_architecture", "name": "Разработать целевую логическую и физическую архитектуру", "inclusion": "always", "outputs": ["Схемы TO BE", "Спецификация компонентов"], "estimation_drivers": ["домены", "компоненты", "площадки"], "evidence": "company"},
+          {"code": "design_security_resilience", "name": "Спроектировать безопасность, резервирование, восстановление, мониторинг и управление", "inclusion": "always", "outputs": ["Архитектурные разделы ИБ и надёжности"], "estimation_drivers": ["контуры", "RTO/RPO", "контроли"], "evidence": "synthesized"},
+          {"code": "define_operating_model", "name": "Определить роли, процессы эксплуатации, SLA/OLA и границы ответственности", "inclusion": "always", "outputs": ["Операционная модель", "RACI"], "estimation_drivers": ["процессы", "команды", "поставщики"], "evidence": "synthesized"},
+          {"code": "develop_regulations", "name": "Разработать требуемые регламенты, политики и шаблоны", "inclusion": "conditional", "signals": ["regulated_scope"], "outputs": ["Комплект регламентов"], "estimation_drivers": ["документы", "процессы"], "evidence": "company"}
+        ]},
+        {"stage_code": "migration_roadmap", "works": [
+          {"code": "map_dependencies", "name": "Уточнить зависимости и сгруппировать объекты перехода", "inclusion": "always", "outputs": ["Карта зависимостей", "Группы перехода"], "estimation_drivers": ["объекты", "зависимости"], "evidence": "industry"},
+          {"code": "plan_waves", "name": "Сформировать волны, последовательность, окна и критерии go/no-go", "inclusion": "always", "outputs": ["План волн"], "estimation_drivers": ["волны", "объекты", "окна"], "evidence": "synthesized"},
+          {"code": "plan_rollback", "name": "Разработать критерии неуспеха и процедуры отката", "inclusion": "conditional", "signals": ["migration", "rollback_required"], "outputs": ["План отката"], "estimation_drivers": ["сценарии", "критичные сервисы"], "evidence": "industry"},
+          {"code": "estimate_roadmap", "name": "Оценить ресурсы, сроки, CAPEX/OPEX, риски и сценарии бюджета", "inclusion": "always", "outputs": ["Оценка roadmap", "Сценарии"], "estimation_drivers": ["инициативы", "роли", "поставки"], "evidence": "company"}
+        ]},
+        {"stage_code": "consulting_acceptance", "works": [
+          {"code": "review_solution", "name": "Провести архитектурные сессии и обработать замечания", "inclusion": "always", "outputs": ["Реестр решений и замечаний"], "estimation_drivers": ["сессии", "стейкхолдеры"], "evidence": "company"},
+          {"code": "handover_design", "name": "Передать редактируемые материалы и провести защиту решения", "inclusion": "always", "outputs": ["Согласованный комплект", "Презентация"], "estimation_drivers": ["документы", "аудитории"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "consulting_governance", "works": [
+          {"code": "manage_design", "name": "Вести план, решения, требования, риски, качество и согласования", "inclusion": "always", "outputs": ["План", "ADR/реестр решений", "Статусы"], "estimation_drivers": ["длительность", "домены", "циклы согласования"], "evidence": "company"}
+        ]}
+      ]
+    },
+    {
+      "template_code": "implementation",
+      "stages": [
+        {"stage_code": "implementation_kickoff", "works": [
+          {"code": "launch_project", "name": "Подтвердить scope, команду, роли, план, каналы и порядок эскалаций", "inclusion": "always", "outputs": ["Устав/паспорт проекта", "Стартовый план", "RACI"], "estimation_drivers": ["стейкхолдеры", "потоки"], "evidence": "company"},
+          {"code": "confirm_prerequisites", "name": "Зафиксировать обязательства заказчика, доступы и исходные условия", "inclusion": "always", "outputs": ["Реестр предпосылок и зависимостей"], "estimation_drivers": ["зависимости", "внешние команды"], "evidence": "company"}
+        ]},
+        {"stage_code": "implementation_governance", "works": [
+          {"code": "manage_implementation", "name": "Управлять планом, ресурсами, рисками, изменениями, подрядчиками и коммуникациями", "inclusion": "always", "outputs": ["План", "Статусы", "RAID", "Реестр изменений"], "estimation_drivers": ["длительность", "потоки", "площадки", "подрядчики"], "evidence": "company"},
+          {"code": "control_quality", "name": "Проводить технические ревью и контролировать качество результатов", "inclusion": "always", "outputs": ["Протоколы ревью"], "estimation_drivers": ["контрольные точки", "deliverables"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "implementation_discovery", "works": [
+          {"code": "validate_current_state", "name": "Обследовать текущую среду, конфигурации, интеграции и зависимости", "inclusion": "always", "outputs": ["Уточнённая схема AS IS", "Инвентаризация"], "estimation_drivers": ["КЕ", "интеграции", "площадки"], "evidence": "company"},
+          {"code": "refine_requirements", "name": "Уточнить требования, ограничения, объёмы, окна и критерии приёмки", "inclusion": "always", "outputs": ["Уточнённое ТЗ/backlog", "Критерии приёмки"], "estimation_drivers": ["требования", "сценарии"], "evidence": "synthesized"},
+          {"code": "assess_compatibility", "name": "Проверить совместимость приложений, протоколов, версий и оборудования", "inclusion": "conditional", "signals": ["migration", "integration"], "outputs": ["Матрица совместимости"], "estimation_drivers": ["приложения", "версии", "интеграции"], "evidence": "company"}
+        ]},
+        {"stage_code": "solution_design", "works": [
+          {"code": "prepare_detailed_design", "name": "Разработать детальный дизайн, схемы, адресацию, sizing и параметры конфигурации", "inclusion": "always", "outputs": ["HLD/LLD", "Спецификация конфигурации"], "estimation_drivers": ["компоненты", "контуры", "площадки"], "evidence": "company"},
+          {"code": "design_integrations", "name": "Спроектировать интеграции, учётные записи, сертификаты и обмен данными", "inclusion": "conditional", "signals": ["integration"], "outputs": ["Спецификация интеграций"], "estimation_drivers": ["интеграции", "протоколы"], "evidence": "company"},
+          {"code": "prepare_test_and_migration_design", "name": "Подготовить ПМИ, план миграции, резервирования и отката", "inclusion": "conditional", "signals": ["migration", "rollback_required"], "outputs": ["ПМИ", "План миграции и отката"], "estimation_drivers": ["сценарии", "волны", "объекты"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "security_review", "works": [
+          {"code": "prepare_security_materials", "name": "Подготовить модель доступа, сетевые потоки, hardening и перечень исключений", "inclusion": "conditional", "signals": ["security_approval", "regulated_scope"], "outputs": ["Пакет на согласование ИБ"], "estimation_drivers": ["контуры", "потоки", "контроли"], "evidence": "synthesized"},
+          {"code": "resolve_security_comments", "name": "Пройти согласование ИБ и устранить замечания", "inclusion": "conditional", "signals": ["security_approval"], "outputs": ["Разрешение/протокол согласования"], "estimation_drivers": ["циклы", "замечания"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "procurement_readiness", "works": [
+          {"code": "confirm_bill_of_materials", "name": "Подтвердить спецификацию оборудования, лицензий, ресурсов и поддержки", "inclusion": "conditional", "signals": ["hardware_delivery", "software_delivery", "procurement"], "outputs": ["BOM/лицензионная спецификация"], "estimation_drivers": ["позиции", "вендоры"], "evidence": "company"},
+          {"code": "track_resource_availability", "name": "Проверить заказ, поставку, права использования и готовность ресурсов", "inclusion": "conditional", "signals": ["hardware_delivery", "software_delivery", "procurement"], "outputs": ["Подтверждение готовности"], "estimation_drivers": ["поставщики", "позиции", "сроки"], "evidence": "company"}
+        ]},
+        {"stage_code": "environment_preparation", "works": [
+          {"code": "provide_access", "name": "Организовать доступы, сервисные учётные записи, сертификаты и окна работ", "inclusion": "always", "outputs": ["Матрица доступов", "Готовые учётные записи"], "estimation_drivers": ["среды", "роли", "контуры"], "evidence": "company"},
+          {"code": "prepare_infrastructure", "name": "Подготовить вычислительные, сетевые, дисковые и платформенные ресурсы", "inclusion": "always", "outputs": ["Готовая среда"], "estimation_drivers": ["серверы/ВМ", "сети", "хранилища"], "evidence": "company"},
+          {"code": "configure_backup_monitoring", "name": "Настроить резервирование, мониторинг и журналирование до продуктивных изменений", "inclusion": "always", "outputs": ["Контрольные проверки backup/monitoring"], "estimation_drivers": ["компоненты", "метрики", "политики"], "evidence": "company"}
+        ]},
+        {"stage_code": "pilot", "works": [
+          {"code": "prepare_pilot", "name": "Выбрать пилотную группу/контур и подготовить данные и сценарии", "inclusion": "conditional", "signals": ["pilot"], "outputs": ["План пилота"], "estimation_drivers": ["пользователи", "сценарии", "компоненты"], "evidence": "synthesized"},
+          {"code": "execute_pilot", "name": "Развернуть пилот, выполнить сценарии и собрать обратную связь", "inclusion": "conditional", "signals": ["pilot"], "outputs": ["Протокол пилота"], "estimation_drivers": ["сценарии", "участники"], "evidence": "company"},
+          {"code": "refine_after_pilot", "name": "Устранить дефекты и уточнить конфигурацию и план тиражирования", "inclusion": "conditional", "signals": ["pilot"], "outputs": ["Уточнённый дизайн и rollout-план"], "estimation_drivers": ["дефекты", "изменения"], "evidence": "company"}
+        ]},
+        {"stage_code": "deployment", "works": [
+          {"code": "install_components", "name": "Установить и базово настроить компоненты решения", "inclusion": "always", "outputs": ["Развёрнутые компоненты"], "estimation_drivers": ["компоненты", "экземпляры", "площадки"], "evidence": "company"},
+          {"code": "configure_solution", "name": "Настроить роли, политики, workflow, интеграции и параметры эксплуатации", "inclusion": "always", "outputs": ["Настроенное решение"], "estimation_drivers": ["объекты конфигурации", "интеграции"], "evidence": "company"},
+          {"code": "execute_field_installation", "name": "Выполнить монтаж и ПНР на объектах", "inclusion": "conditional", "signals": ["onsite_work", "installation", "multi_site"], "outputs": ["Акты монтажа/ПНР"], "estimation_drivers": ["единицы", "площадки", "бригады"], "evidence": "company"}
+        ]},
+        {"stage_code": "cutover_migration", "works": [
+          {"code": "prepare_cutover", "name": "Проверить резервные копии, freeze, коммуникации, go/no-go и откат", "inclusion": "conditional", "signals": ["migration"], "outputs": ["Cutover checklist", "Go/no-go решение"], "estimation_drivers": ["сервисы", "участники", "окна"], "evidence": "industry"},
+          {"code": "migrate_configuration_data", "name": "Перенести конфигурации, роли, данные, пользователей или нагрузки", "inclusion": "conditional", "signals": ["migration", "data_migration"], "outputs": ["Мигрированные объекты", "Журнал переноса"], "estimation_drivers": ["объекты", "объём данных", "волны"], "evidence": "company"},
+          {"code": "switch_and_stabilize", "name": "Выполнить переключение, контроль сервисов и период стабилизации", "inclusion": "conditional", "signals": ["migration"], "outputs": ["Протокол переключения", "Отчёт стабилизации"], "estimation_drivers": ["сервисы", "SLA", "длительность наблюдения"], "evidence": "company"},
+          {"code": "decommission_legacy", "name": "Вывести старые компоненты, очистить ссылки и актуализировать учёт", "inclusion": "conditional", "signals": ["decommissioning"], "outputs": ["Акт вывода", "Обновлённая CMDB"], "estimation_drivers": ["компоненты", "зависимости"], "evidence": "company"}
+        ]},
+        {"stage_code": "validation_acceptance", "works": [
+          {"code": "execute_tests", "name": "Провести функциональные, интеграционные, отказоустойчивые и нагрузочные испытания по scope", "inclusion": "always", "outputs": ["Протоколы испытаний"], "estimation_drivers": ["сценарии", "контуры", "объекты"], "evidence": "company"},
+          {"code": "remediate_defects", "name": "Устранить дефекты и повторить проверки", "inclusion": "always", "outputs": ["Закрытый реестр дефектов"], "estimation_drivers": ["дефекты", "циклы"], "evidence": "company"},
+          {"code": "customer_acceptance", "name": "Организовать пользовательскую/техническую приёмку и подписание результатов", "inclusion": "always", "outputs": ["Акт/протокол приёмки"], "estimation_drivers": ["приёмочные сценарии", "комиссии", "площадки"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "knowledge_transfer", "works": [
+          {"code": "prepare_documentation", "name": "Подготовить исполнительную, эксплуатационную и пользовательскую документацию", "inclusion": "always", "outputs": ["Комплект документации"], "estimation_drivers": ["документы", "системы", "площадки"], "evidence": "company"},
+          {"code": "train_teams", "name": "Обучить администраторов, поддержку и пользователей", "inclusion": "conditional", "signals": ["training"], "outputs": ["Материалы", "Протокол обучения"], "estimation_drivers": ["группы", "роли", "сессии"], "evidence": "company"}
+        ]},
+        {"stage_code": "handover_closure", "works": [
+          {"code": "handover_to_operations", "name": "Передать решение в эксплуатацию: владельцы, мониторинг, резервирование, поддержка и известные ограничения", "inclusion": "always", "outputs": ["Акт передачи", "Операционный checklist"], "estimation_drivers": ["команды", "сервисы"], "evidence": "synthesized"},
+          {"code": "close_project", "name": "Закрыть открытые вопросы, архивировать материалы и зафиксировать lessons learned", "inclusion": "always", "outputs": ["Итоговый отчёт", "Lessons learned"], "estimation_drivers": ["открытые вопросы", "потоки"], "evidence": "synthesized"}
+        ]}
+      ]
+    },
+    {
+      "template_code": "managed_support",
+      "stages": [
+        {"stage_code": "service_scope", "works": [
+          {"code": "define_service_catalog", "name": "Определить услуги, компоненты, каналы, режим, объёмы и исключения", "inclusion": "always", "outputs": ["Каталог услуг", "Матрица охвата"], "estimation_drivers": ["услуги", "КЕ", "пользователи", "площадки"], "evidence": "company"},
+          {"code": "define_sla", "name": "Согласовать приоритеты, SLA/OLA, окна и правила измерения", "inclusion": "always", "outputs": ["SLA-матрица"], "estimation_drivers": ["приоритеты", "режим", "метрики"], "evidence": "company"},
+          {"code": "define_responsibilities", "name": "Зафиксировать L1/L2/L3, вендорские эскалации и RACI", "inclusion": "always", "outputs": ["RACI", "Матрица эскалаций"], "estimation_drivers": ["линии", "команды", "вендоры"], "evidence": "company"}
+        ]},
+        {"stage_code": "service_baseline", "works": [
+          {"code": "inventory_supported_scope", "name": "Инвентаризировать поддерживаемые системы, конфигурации, пользователей и зависимости", "inclusion": "always", "outputs": ["Реестр КЕ", "Базовая линия"], "estimation_drivers": ["КЕ", "приложения", "площадки"], "evidence": "company"},
+          {"code": "analyze_history", "name": "Проанализировать обращения, инциденты, изменения, доступность и сезонность", "inclusion": "always", "outputs": ["Профиль нагрузки"], "estimation_drivers": ["обращения", "период", "категории"], "evidence": "synthesized"},
+          {"code": "assess_support_processes", "name": "Оценить текущие процессы, инструменты, знания и пробелы", "inclusion": "always", "outputs": ["Gap-лист готовности сервиса"], "estimation_drivers": ["процессы", "инструменты", "команды"], "evidence": "company"}
+        ]},
+        {"stage_code": "partner_sourcing", "works": [
+          {"code": "source_partners", "name": "Подобрать, проверить и договориться с региональными/экспертными подрядчиками", "inclusion": "conditional", "signals": ["subcontractor"], "outputs": ["Пул подрядчиков", "Условия покрытия"], "estimation_drivers": ["регионы", "компетенции", "подрядчики"], "evidence": "synthesized"},
+          {"code": "onboard_partners", "name": "Передать регламенты, SLA, доступы и порядок отчётности подрядчикам", "inclusion": "conditional", "signals": ["subcontractor"], "outputs": ["Акты готовности подрядчиков"], "estimation_drivers": ["подрядчики", "площадки"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "service_transition", "works": [
+          {"code": "transfer_knowledge", "name": "Получить документацию, исходный код/конфигурации, историю и знания действующей команды", "inclusion": "conditional", "signals": ["incumbent_transition"], "outputs": ["План и протокол KT"], "estimation_drivers": ["системы", "сессии", "качество знаний"], "evidence": "company"},
+          {"code": "configure_service_tooling", "name": "Настроить Service Desk, категории, обязательные поля, маршрутизацию, отчёты и базу знаний", "inclusion": "always", "outputs": ["Настроенный ITSM-процесс"], "estimation_drivers": ["услуги", "категории", "очереди", "отчёты"], "evidence": "company"},
+          {"code": "configure_observability", "name": "Настроить мониторинг, логирование, оповещения и проверку резервных копий", "inclusion": "always", "outputs": ["Мониторинг и алерты"], "estimation_drivers": ["метрики", "компоненты", "алерты"], "evidence": "company"},
+          {"code": "shadow_and_pilot", "name": "Провести теневую/пилотную поддержку и откалибровать процессы на первых заявках", "inclusion": "conditional", "signals": ["incumbent_transition", "pilot"], "outputs": ["Отчёт пилота", "Уточнённые регламенты"], "estimation_drivers": ["период", "заявки", "команды"], "evidence": "company"}
+        ]},
+        {"stage_code": "service_security_readiness", "works": [
+          {"code": "grant_support_access", "name": "Оформить допуски, привилегированные доступы и безопасные каналы подключения", "inclusion": "conditional", "signals": ["security_approval", "regulated_scope"], "outputs": ["Матрица допусков", "Согласованные доступы"], "estimation_drivers": ["инженеры", "контуры", "роли"], "evidence": "synthesized"},
+          {"code": "agree_security_operations", "name": "Согласовать обработку событий ИБ, критических обновлений и защищённых данных", "inclusion": "conditional", "signals": ["security_approval"], "outputs": ["Регламент ИБ-взаимодействия"], "estimation_drivers": ["процессы", "СЗИ"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "service_readiness", "works": [
+          {"code": "readiness_review", "name": "Проверить команду, расписание, доступы, инструменты, знания, контакты и эскалации", "inclusion": "always", "outputs": ["Readiness checklist", "Go-live решение"], "estimation_drivers": ["команды", "смены", "системы"], "evidence": "synthesized"},
+          {"code": "announce_service", "name": "Запустить коммуникации пользователям и владельцам услуг", "inclusion": "always", "outputs": ["Памятка и уведомление о запуске"], "estimation_drivers": ["аудитории", "каналы"], "evidence": "company"}
+        ]},
+        {"stage_code": "service_operation", "hours_basis": "В месяц", "works": [
+          {"code": "handle_incidents_requests", "name": "Принимать, регистрировать, классифицировать, диагностировать, решать и маршрутизировать обращения", "inclusion": "always", "outputs": ["Обработанные обращения", "История решений"], "estimation_drivers": ["обращения/мес", "поддерживаемые сервисы", "сложность", "доля решения по линиям", "режим"], "evidence": "company"},
+          {"code": "perform_routine_operations", "name": "Выполнять регламентные проверки, обслуживание, обновления и администрирование", "inclusion": "always", "outputs": ["Журналы регламентных работ"], "estimation_drivers": ["КЕ", "поддерживаемые сервисы", "управляемые компоненты", "регламенты", "частота"], "evidence": "company"},
+          {"code": "monitor_and_restore", "name": "Мониторить состояние, реагировать на события и выполнять аварийное восстановление", "inclusion": "always", "outputs": ["События и восстановленные сервисы"], "estimation_drivers": ["метрики", "события", "SLA", "дежурства", "поддерживаемые сервисы", "управляемые компоненты"], "evidence": "company"},
+          {"code": "implement_point_change", "name": "Реализовать и проверить одно подтверждённое изменение или интеграцию существующего сервиса", "inclusion": "conditional", "signals": ["custom_development", "installation", "integration"], "outputs": ["Реализованное изменение", "Протокол проверки"], "estimation_drivers": ["изменения", "интеграции", "компоненты", "критерии приёмки"], "evidence": "company", "hours_basis": "Всего"},
+          {"code": "fulfill_changes", "name": "Анализировать, планировать, тестировать и внедрять регулярные запросы на изменения", "inclusion": "conditional", "signals": ["recurring_changes"], "outputs": ["Выполненные RFC"], "estimation_drivers": ["RFC/мес", "сложность", "окна"], "evidence": "company"},
+          {"code": "manage_vendor_cases", "name": "Регистрировать и сопровождать обращения к вендору", "inclusion": "conditional", "signals": ["vendor_support"], "outputs": ["Вендорские кейсы"], "estimation_drivers": ["кейсы", "вендоры"], "evidence": "company"}
+        ]},
+        {"stage_code": "service_improvement", "hours_basis": "В месяц", "works": [
+          {"code": "report_service", "name": "Формировать операционную, SLA и управленческую отчётность", "inclusion": "always", "outputs": ["Еженедельные/ежемесячные отчёты"], "estimation_drivers": ["метрики", "аудитории", "частота"], "evidence": "company"},
+          {"code": "review_service", "name": "Проводить сервисные встречи, разбирать нарушения и согласовывать улучшения", "inclusion": "always", "outputs": ["Протоколы service review", "План улучшений"], "estimation_drivers": ["встречи", "SLA-нарушения"], "evidence": "industry"},
+          {"code": "improve_knowledge_automation", "name": "Развивать базу знаний, скрипты, автоматизацию и мониторинг", "inclusion": "always", "outputs": ["Обновлённые знания и автоматизации"], "estimation_drivers": ["повторные обращения", "кандидаты автоматизации"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "service_renewal_exit", "works": [
+          {"code": "review_renewal", "name": "Пересмотреть объёмы, SLA, цены, риски и план следующего периода", "inclusion": "conditional", "signals": ["renewal"], "outputs": ["Предложение на продление"], "estimation_drivers": ["изменение объёмов", "SLA", "срок"], "evidence": "synthesized"},
+          {"code": "exit_service", "name": "Передать знания, данные, доступы и открытые обращения при завершении", "inclusion": "conditional", "signals": ["renewal"], "outputs": ["Exit-план", "Акт передачи"], "estimation_drivers": ["системы", "открытые обращения", "получатели"], "evidence": "industry"}
+        ]},
+        {"stage_code": "service_governance", "hours_basis": "В месяц", "works": [
+          {"code": "manage_service", "name": "Управлять командой, мощностью, SLA, рисками, финансами, подрядчиками и эскалациями", "inclusion": "always", "outputs": ["Статусы", "Реестр рисков", "Capacity-план"], "estimation_drivers": ["длительность", "команды", "площадки", "поставщики", "ритм встреч"], "evidence": "company"}
+        ]}
+      ]
+    },
+    {
+      "template_code": "cloud_service",
+      "stages": [
+        {"stage_code": "cloud_requirements", "works": [
+          {"code": "capture_cloud_requirements", "name": "Собрать требования к нагрузке, доступности, географии, ИБ, поддержке и сроку", "inclusion": "always", "outputs": ["Профиль требований"], "estimation_drivers": ["нагрузки", "контуры", "SLA"], "evidence": "synthesized"},
+          {"code": "size_resources", "name": "Рассчитать vCPU, RAM, storage, IOPS, трафик, лицензии и резервирование", "inclusion": "always", "outputs": ["Sizing"], "estimation_drivers": ["ресурсы", "рост", "RTO/RPO"], "evidence": "company"},
+          {"code": "assess_migration", "name": "Оценить готовность и зависимости переносимых нагрузок", "inclusion": "conditional", "signals": ["migration"], "outputs": ["Оценка готовности", "Кандидаты волн"], "estimation_drivers": ["нагрузки", "зависимости"], "evidence": "industry"}
+        ]},
+        {"stage_code": "cloud_solution_offer", "works": [
+          {"code": "design_cloud_configuration", "name": "Сформировать конфигурацию тенанта, сети, сервисов, резервирования и поддержки", "inclusion": "always", "outputs": ["Архитектура и спецификация"], "estimation_drivers": ["сервисы", "контуры", "зоны"], "evidence": "company"},
+          {"code": "calculate_consumption", "name": "Рассчитать разовые работы, ежемесячное потребление, лицензии и варианты масштаба", "inclusion": "always", "outputs": ["Коммерческая модель"], "estimation_drivers": ["тарифы", "ресурсы", "период"], "evidence": "company"},
+          {"code": "define_shared_responsibility", "name": "Зафиксировать границы ответственности провайдера, MONS и заказчика", "inclusion": "always", "outputs": ["RACI/shared responsibility matrix"], "estimation_drivers": ["сервисы", "стороны"], "evidence": "industry"}
+        ]},
+        {"stage_code": "cloud_security", "works": [
+          {"code": "design_cloud_security", "name": "Проработать IAM, сеть, шифрование, журналы, резервирование и требования к данным", "inclusion": "always", "outputs": ["Раздел ИБ"], "estimation_drivers": ["контуры", "роли", "требования"], "evidence": "synthesized"},
+          {"code": "approve_cloud_architecture", "name": "Согласовать архитектуру и исключения с ИБ", "inclusion": "conditional", "signals": ["security_approval", "regulated_scope"], "outputs": ["Согласование ИБ"], "estimation_drivers": ["циклы", "замечания"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "cloud_contract", "works": [
+          {"code": "register_and_quote", "name": "Зарегистрировать сделку, получить квотацию и подтвердить тарифы", "inclusion": "conditional", "signals": ["procurement", "software_delivery"], "outputs": ["Квотация/заказ"], "estimation_drivers": ["вендоры", "тарифы"], "evidence": "company"},
+          {"code": "contract_cloud_service", "name": "Согласовать договор, SLA, период, лимиты, биллинг и условия завершения", "inclusion": "always", "outputs": ["Договор/спецификация"], "estimation_drivers": ["стороны", "сервисы", "циклы"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "cloud_provisioning", "works": [
+          {"code": "create_tenant", "name": "Создать тенант/подписку, структуры аккаунтов, роли и квоты", "inclusion": "always", "outputs": ["Активный тенант"], "estimation_drivers": ["тенанты", "роли", "подписки"], "evidence": "company"},
+          {"code": "provision_cloud_resources", "name": "Развернуть сети, ВМ/платформенные сервисы, хранилища и балансировку", "inclusion": "always", "outputs": ["Развёрнутая среда"], "estimation_drivers": ["ресурсы", "сервисы", "контуры"], "evidence": "company"},
+          {"code": "configure_backup_monitoring_cloud", "name": "Настроить резервное копирование, мониторинг, логирование и бюджеты/алерты", "inclusion": "always", "outputs": ["Работающие контроли"], "estimation_drivers": ["политики", "метрики", "ресурсы"], "evidence": "company"},
+          {"code": "connect_cloud", "name": "Настроить VPN/IPSec, DNS, федерацию и внешние интеграции", "inclusion": "conditional", "signals": ["integration"], "outputs": ["Подключения и интеграции"], "estimation_drivers": ["каналы", "домены", "интеграции"], "evidence": "company"}
+        ]},
+        {"stage_code": "cloud_onboarding", "works": [
+          {"code": "validate_cloud_service", "name": "Проверить доступность, производительность, безопасность, backup/restore и биллинг", "inclusion": "always", "outputs": ["Протокол проверок"], "estimation_drivers": ["сценарии", "сервисы"], "evidence": "company"},
+          {"code": "migrate_or_onboard_users", "name": "Перенести нагрузку или подключить пользователей и администраторов", "inclusion": "conditional", "signals": ["migration", "data_migration"], "outputs": ["Подключённая нагрузка/пользователи"], "estimation_drivers": ["пользователи", "данные", "волны"], "evidence": "synthesized"},
+          {"code": "handover_cloud", "name": "Передать инструкции, доступы, контакты и правила потребления", "inclusion": "always", "outputs": ["Onboarding-пакет"], "estimation_drivers": ["роли", "документы"], "evidence": "company"}
+        ]},
+        {"stage_code": "cloud_operation", "hours_basis": "В месяц", "works": [
+          {"code": "operate_cloud", "name": "Оказывать эксплуатацию и поддержку, управлять инцидентами, изменениями и доступами", "inclusion": "always", "outputs": ["Операционные результаты"], "estimation_drivers": ["КЕ", "обращения", "режим"], "evidence": "company"},
+          {"code": "monitor_capacity_cost", "name": "Контролировать доступность, ёмкость, потребление и стоимость", "inclusion": "always", "outputs": ["Отчёт по SLA/ёмкости/затратам"], "estimation_drivers": ["ресурсы", "метрики", "аккаунты"], "evidence": "synthesized"},
+          {"code": "patch_and_improve", "name": "Выполнять обновления и согласованные улучшения платформы", "inclusion": "always", "outputs": ["Журнал изменений"], "estimation_drivers": ["компоненты", "релизы"], "evidence": "company"}
+        ]},
+        {"stage_code": "cloud_renewal_exit", "works": [
+          {"code": "rightsize_and_renew", "name": "Пересмотреть sizing, тарифы, лицензии и продление", "inclusion": "conditional", "signals": ["renewal"], "outputs": ["План продления/масштабирования"], "estimation_drivers": ["потребление", "рост", "срок"], "evidence": "synthesized"},
+          {"code": "exit_cloud", "name": "Экспортировать данные, отозвать доступы и удалить/передать ресурсы по правилам завершения", "inclusion": "conditional", "signals": ["decommissioning", "renewal"], "outputs": ["Exit-акт", "Подтверждение удаления/передачи"], "estimation_drivers": ["данные", "ресурсы", "аккаунты"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "cloud_governance", "hours_basis": "В месяц", "works": [
+          {"code": "manage_cloud_service", "name": "Управлять SLA, потреблением, бюджетами, рисками, провайдерами и изменениями", "inclusion": "always", "outputs": ["Статусы", "Реестр рисков", "Финансовый контроль"], "estimation_drivers": ["провайдеры", "аккаунты", "длительность"], "evidence": "synthesized"}
+        ]}
+      ]
+    },
+    {
+      "template_code": "supply",
+      "stages": [
+        {"stage_code": "supply_requirements", "works": [
+          {"code": "capture_supply_need", "name": "Уточнить назначение, количество, площадки, сроки и ограничения", "inclusion": "always", "outputs": ["Заявка/профиль потребности"], "estimation_drivers": ["позиции", "площадки"], "evidence": "synthesized"},
+          {"code": "prepare_specification", "name": "Подготовить техническую и лицензионную спецификацию, аналоги и критерии приёмки", "inclusion": "always", "outputs": ["Спецификация/BOM"], "estimation_drivers": ["позиции", "вендоры", "метрики лицензирования"], "evidence": "synthesized"},
+          {"code": "check_compatibility", "name": "Проверить совместимость с существующей средой и требованиями поддержки", "inclusion": "always", "outputs": ["Матрица совместимости"], "estimation_drivers": ["позиции", "системы"], "evidence": "company"}
+        ]},
+        {"stage_code": "supply_sourcing", "works": [
+          {"code": "request_quotes", "name": "Запросить квотации, наличие, сроки и регистрацию сделки", "inclusion": "always", "outputs": ["Сравнимые предложения"], "estimation_drivers": ["поставщики", "позиции"], "evidence": "company"},
+          {"code": "evaluate_suppliers", "name": "Сравнить цену, сроки, гарантию, поддержку, риски и полную стоимость", "inclusion": "always", "outputs": ["Матрица выбора"], "estimation_drivers": ["предложения", "критерии"], "evidence": "industry"},
+          {"code": "confirm_vendor_eligibility", "name": "Проверить партнёрский статус, сертификаты и авторизацию канала", "inclusion": "conditional", "signals": ["vendor_support", "regulated_scope"], "outputs": ["Подтверждения вендора"], "estimation_drivers": ["вендоры", "сертификаты"], "evidence": "company"}
+        ]},
+        {"stage_code": "supply_security", "works": [
+          {"code": "verify_security_compliance", "name": "Проверить сертификаты, происхождение, версии, криптографию и требования ИБ", "inclusion": "conditional", "signals": ["security_approval", "regulated_scope"], "outputs": ["Заключение ИБ"], "estimation_drivers": ["позиции", "требования"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "supply_contract", "works": [
+          {"code": "agree_contract", "name": "Согласовать договор, спецификацию, лицензирование, сроки, гарантию и штрафы", "inclusion": "always", "outputs": ["Договор и спецификация"], "estimation_drivers": ["стороны", "позиции", "циклы"], "evidence": "synthesized"},
+          {"code": "place_order", "name": "Разместить заказ и подтвердить график поставки/активации", "inclusion": "always", "outputs": ["Подтверждённый заказ"], "estimation_drivers": ["поставщики", "партии"], "evidence": "company"}
+        ]},
+        {"stage_code": "supply_delivery", "works": [
+          {"code": "track_delivery", "name": "Контролировать производство, комплектацию, логистику и поставку по партиям", "inclusion": "conditional", "signals": ["hardware_delivery"], "outputs": ["Статусы партий", "Накладные"], "estimation_drivers": ["партии", "площадки", "габариты"], "evidence": "synthesized"},
+          {"code": "activate_licenses", "name": "Передать ключи, права, подписки и доступы к порталам", "inclusion": "conditional", "signals": ["software_delivery"], "outputs": ["Лицензионные подтверждения"], "estimation_drivers": ["лицензии", "тенанты", "пользователи"], "evidence": "company"},
+          {"code": "inspect_delivery", "name": "Проверить комплектность, серийные номера, повреждения и соответствие", "inclusion": "always", "outputs": ["Акт входного контроля"], "estimation_drivers": ["единицы", "партии"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "supply_installation", "works": [
+          {"code": "install_and_commission", "name": "Выполнить монтаж, подключение, базовую настройку и ПНР", "inclusion": "conditional", "signals": ["installation", "onsite_work"], "outputs": ["Акты монтажа/ПНР"], "estimation_drivers": ["единицы", "площадки", "сложность"], "evidence": "company"},
+          {"code": "prepare_as_built", "name": "Подготовить исполнительные схемы и протоколы испытаний", "inclusion": "conditional", "signals": ["installation"], "outputs": ["Исполнительная документация"], "estimation_drivers": ["площадки", "системы"], "evidence": "company"}
+        ]},
+        {"stage_code": "supply_acceptance", "works": [
+          {"code": "accept_supply", "name": "Провести проверку, приёмку и подписание накладных/актов", "inclusion": "always", "outputs": ["Подписанные документы"], "estimation_drivers": ["партии", "площадки"], "evidence": "company"},
+          {"code": "register_assets_warranty", "name": "Передать гарантию, поддержку, серийные номера и данные для учёта активов", "inclusion": "always", "outputs": ["Гарантийный пакет", "Реестр активов/лицензий"], "estimation_drivers": ["единицы", "вендоры"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "supply_governance", "works": [
+          {"code": "manage_supply", "name": "Управлять заказами, сроками, рисками, изменениями, поставщиками и документами", "inclusion": "always", "outputs": ["Статусы", "Реестр рисков"], "estimation_drivers": ["поставщики", "партии", "длительность"], "evidence": "synthesized"}
+        ]}
+      ]
+    },
+    {
+      "template_code": "leasing",
+      "stages": [
+        {"stage_code": "lease_requirements", "works": [
+          {"code": "define_lease_need", "name": "Уточнить оборудование, количество, конфигурацию, площадки, срок и режим использования", "inclusion": "always", "outputs": ["Спецификация аренды"], "estimation_drivers": ["единицы", "площадки", "срок"], "evidence": "synthesized"},
+          {"code": "define_service_conditions", "name": "Определить SLA замены, поддержку, расходники, повреждения и допустимый износ", "inclusion": "always", "outputs": ["Условия сервиса и возврата"], "estimation_drivers": ["классы оборудования", "SLA", "география"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "lease_contract", "works": [
+          {"code": "calculate_lease_model", "name": "Рассчитать ежемесячную ставку, обеспечение, логистику, поддержку и варианты выкупа", "inclusion": "always", "outputs": ["Коммерческая модель"], "estimation_drivers": ["стоимость активов", "срок", "остаточная стоимость"], "evidence": "synthesized"},
+          {"code": "agree_lease_contract", "name": "Согласовать договор, ответственность, страхование, замену, продление и возврат", "inclusion": "always", "outputs": ["Договор аренды/субаренды"], "estimation_drivers": ["стороны", "активы", "циклы"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "lease_delivery", "works": [
+          {"code": "prepare_assets", "name": "Закупить/зарезервировать, промаркировать, учесть и подготовить оборудование", "inclusion": "always", "outputs": ["Реестр подготовленных активов"], "estimation_drivers": ["единицы", "конфигурации"], "evidence": "synthesized"},
+          {"code": "deliver_assets", "name": "Доставить, проверить комплектность и передать по акту", "inclusion": "always", "outputs": ["Акт передачи"], "estimation_drivers": ["партии", "площадки", "габариты"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "lease_installation", "works": [
+          {"code": "install_leased_assets", "name": "Установить, подключить, настроить и проверить оборудование", "inclusion": "conditional", "signals": ["installation", "onsite_work"], "outputs": ["Акт ввода"], "estimation_drivers": ["единицы", "площадки"], "evidence": "synthesized"},
+          {"code": "register_configuration", "name": "Зафиксировать серийные номера, конфигурацию, состояние и место эксплуатации", "inclusion": "always", "outputs": ["Карточки активов"], "estimation_drivers": ["единицы"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "lease_operation", "hours_basis": "В месяц", "works": [
+          {"code": "bill_and_reconcile", "name": "Вести ежемесячный учёт, биллинг и сверку состава активов", "inclusion": "always", "outputs": ["Ежемесячный реестр и акт"], "estimation_drivers": ["единицы", "изменения", "период"], "evidence": "synthesized"},
+          {"code": "maintain_replace", "name": "Обрабатывать неисправности, замены, перемещения и изменения конфигурации", "inclusion": "always", "outputs": ["Выполненные замены", "Актуальный реестр"], "estimation_drivers": ["инциденты", "SLA", "площадки"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "lease_return_renewal", "works": [
+          {"code": "decide_end_option", "name": "Согласовать возврат, продление, замену или выкуп", "inclusion": "always", "outputs": ["Решение по завершению"], "estimation_drivers": ["активы", "состояние", "остаточная стоимость"], "evidence": "synthesized"},
+          {"code": "return_assets", "name": "Инвентаризировать, безопасно очистить данные, демонтировать и вернуть активы", "inclusion": "conditional", "signals": ["decommissioning"], "outputs": ["Акт возврата", "Подтверждение очистки"], "estimation_drivers": ["единицы", "площадки", "носители"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "lease_governance", "hours_basis": "В месяц", "works": [
+          {"code": "manage_lease", "name": "Управлять активами, SLA, платежами, рисками, изменениями и продлением", "inclusion": "always", "outputs": ["Статусы", "Реестр активов и рисков"], "estimation_drivers": ["единицы", "площадки", "длительность"], "evidence": "synthesized"}
+        ]}
+      ]
+    },
+    {
+      "template_code": "complex",
+      "stages": [
+        {"stage_code": "complex_scope", "works": [
+          {"code": "define_program_outcomes", "name": "Определить общий результат, границы, бизнес-эффект и критерии успеха", "inclusion": "always", "outputs": ["Паспорт программы"], "estimation_drivers": ["цели", "стейкхолдеры"], "evidence": "synthesized"},
+          {"code": "structure_workstreams", "name": "Выделить потоки аудита, проектирования, поставки, внедрения, миграции и сервиса", "inclusion": "always", "outputs": ["Карта потоков и владельцев"], "estimation_drivers": ["потоки", "системы", "подрядчики"], "evidence": "company"},
+          {"code": "map_cross_dependencies", "name": "Зафиксировать зависимости, общие ресурсы и сквозные контрольные точки", "inclusion": "always", "outputs": ["Карта зависимостей"], "estimation_drivers": ["зависимости", "вехи"], "evidence": "industry"}
+        ]},
+        {"stage_code": "complex_discovery", "works": [
+          {"code": "run_multi_domain_assessment", "name": "Провести обследование по всем технологическим и процессным доменам", "inclusion": "always", "outputs": ["Консолидированная модель AS IS"], "estimation_drivers": ["домены", "площадки", "КЕ"], "evidence": "company"},
+          {"code": "consolidate_requirements", "name": "Свести требования, объёмы, ограничения и исходные данные потоков", "inclusion": "always", "outputs": ["Сквозной каталог требований"], "estimation_drivers": ["потоки", "требования"], "evidence": "synthesized"},
+          {"code": "identify_program_risks", "name": "Оценить сквозные риски, узкие места, наследие и готовность организации", "inclusion": "always", "outputs": ["Карта программных рисков"], "estimation_drivers": ["риски", "зависимости", "команды"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "complex_design", "works": [
+          {"code": "design_integrated_target", "name": "Разработать согласованную целевую архитектуру и сервисную модель", "inclusion": "always", "outputs": ["Интегрированная модель TO BE"], "estimation_drivers": ["домены", "потоки", "интеграции"], "evidence": "company"},
+          {"code": "design_transition_program", "name": "Сформировать единый roadmap, волны, зависимости и критерии go/no-go", "inclusion": "always", "outputs": ["Интегрированный roadmap"], "estimation_drivers": ["волны", "площадки", "системы"], "evidence": "company"},
+          {"code": "design_operating_model_complex", "name": "Определить целевые процессы, SLA, RACI, поддержку и управление поставщиками", "inclusion": "always", "outputs": ["Операционная модель"], "estimation_drivers": ["команды", "услуги", "поставщики"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "complex_security", "works": [
+          {"code": "assess_end_to_end_security", "name": "Провести сквозной анализ угроз, данных, доступов и регуляторных требований", "inclusion": "always", "outputs": ["Сквозные требования ИБ"], "estimation_drivers": ["контуры", "потоки", "требования"], "evidence": "synthesized"},
+          {"code": "approve_security_by_stream", "name": "Согласовать архитектуру и планы изменений по каждому потоку и в целом", "inclusion": "conditional", "signals": ["security_approval", "regulated_scope"], "outputs": ["Комплект согласований"], "estimation_drivers": ["потоки", "циклы", "замечания"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "complex_sourcing", "works": [
+          {"code": "consolidate_bom_capacity", "name": "Свести оборудование, лицензии, облачные ресурсы, роли и подрядчиков", "inclusion": "always", "outputs": ["Консолидированный ресурсный план"], "estimation_drivers": ["позиции", "роли", "поставщики"], "evidence": "company"},
+          {"code": "source_and_contract", "name": "Провести квотацию, выбор, договорование и мобилизацию поставщиков", "inclusion": "conditional", "signals": ["procurement", "subcontractor"], "outputs": ["Договоры и заказы", "План мобилизации"], "estimation_drivers": ["поставщики", "лоты", "циклы"], "evidence": "industry"},
+          {"code": "align_supply_schedule", "name": "Синхронизировать поставки и доступность ресурсов с волнами реализации", "inclusion": "always", "outputs": ["Интегрированный график ресурсов"], "estimation_drivers": ["партии", "волны", "площадки"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "complex_transition", "works": [
+          {"code": "execute_workstreams", "name": "Выполнить поставку, подготовку сред, настройку, интеграцию и миграцию по потокам", "inclusion": "always", "outputs": ["Результаты потоков"], "estimation_drivers": ["потоки", "объекты", "волны"], "evidence": "company"},
+          {"code": "coordinate_cutovers", "name": "Координировать общие окна, зависимости, откаты и коммуникации", "inclusion": "conditional", "signals": ["migration", "rollback_required"], "outputs": ["Сквозные cutover-планы"], "estimation_drivers": ["окна", "системы", "участники"], "evidence": "synthesized"},
+          {"code": "manage_organizational_change", "name": "Организовать обучение, коммуникации и изменение процессов", "inclusion": "conditional", "signals": ["training"], "outputs": ["План OCM", "Обученные группы"], "estimation_drivers": ["аудитории", "процессы", "площадки"], "evidence": "company"}
+        ]},
+        {"stage_code": "complex_pilot", "works": [
+          {"code": "run_integrated_pilot", "name": "Провести пилот сквозных бизнес- и технических сценариев", "inclusion": "conditional", "signals": ["pilot"], "outputs": ["Протокол комплексного пилота"], "estimation_drivers": ["сценарии", "потоки", "участники"], "evidence": "synthesized"},
+          {"code": "refine_program", "name": "Уточнить архитектуру, регламенты и тиражирование по результатам пилота", "inclusion": "conditional", "signals": ["pilot"], "outputs": ["Обновлённый rollout-план"], "estimation_drivers": ["дефекты", "изменения"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "complex_acceptance", "works": [
+          {"code": "accept_streams", "name": "Провести приёмку результатов каждого потока", "inclusion": "always", "outputs": ["Протоколы потоков"], "estimation_drivers": ["потоки", "сценарии", "площадки"], "evidence": "company"},
+          {"code": "run_end_to_end_acceptance", "name": "Проверить сквозные сценарии, производительность, отказоустойчивость и ИБ", "inclusion": "always", "outputs": ["Сквозной протокол приёмки"], "estimation_drivers": ["сценарии", "интеграции", "контуры"], "evidence": "synthesized"},
+          {"code": "close_acceptance_gaps", "name": "Устранить межпотоковые дефекты и закрыть критерии результата", "inclusion": "always", "outputs": ["Закрытый реестр дефектов"], "estimation_drivers": ["дефекты", "команды"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "complex_operation", "hours_basis": "В месяц", "works": [
+          {"code": "stabilize_integrated_service", "name": "Обеспечить гиперкар/стабилизацию и управление общими инцидентами", "inclusion": "always", "outputs": ["Отчёт стабилизации"], "estimation_drivers": ["сервисы", "инциденты", "период"], "evidence": "synthesized"},
+          {"code": "operate_service_streams", "name": "Оказывать регулярные услуги по потокам и сквозное управление сервисом", "inclusion": "conditional", "signals": ["recurring_service"], "outputs": ["SLA-результаты", "Сервисная отчётность"], "estimation_drivers": ["потоки", "обращения", "КЕ", "режим"], "evidence": "company"}
+        ]},
+        {"stage_code": "complex_renewal_closure", "works": [
+          {"code": "assess_program_outcomes", "name": "Сопоставить результаты с целями, KPI, бюджетом и остаточными рисками", "inclusion": "always", "outputs": ["Итоговый отчёт программы"], "estimation_drivers": ["потоки", "KPI", "риски"], "evidence": "synthesized"},
+          {"code": "plan_next_horizon", "name": "Сформировать развитие, продление сервисов или exit-план", "inclusion": "always", "outputs": ["Roadmap следующего периода/exit"], "estimation_drivers": ["инициативы", "сервисы", "открытые вопросы"], "evidence": "synthesized"}
+        ]},
+        {"stage_code": "complex_governance", "works": [
+          {"code": "integrate_plans", "name": "Вести единый план, критический путь, ресурсы и зависимости потоков", "inclusion": "always", "outputs": ["Интегрированный план"], "estimation_drivers": ["потоки", "вехи", "длительность"], "evidence": "company"},
+          {"code": "govern_program", "name": "Управлять комитетами, решениями, рисками, изменениями, качеством, финансами и поставщиками", "inclusion": "always", "outputs": ["Статусы", "RAID", "Реестр решений"], "estimation_drivers": ["комитеты", "потоки", "поставщики", "ритм"], "evidence": "company"}
+        ]}
+      ]
+    }
+  ],
+  "project_type_specializations": [
+    {
+      "project_type_code": "SUP_Complex",
+      "template_code": "complex",
+      "scope_dimensions": ["линии L1/L2/L3", "технологические домены", "площадки", "подрядчики"],
+      "additions": [
+        {"stage_code": "complex_design", "works": ["Спроектировать единый каталог услуг и сквозную модель эскалаций", "Разделить разовые transition-работы и регулярные сервисы"]},
+        {"stage_code": "complex_transition", "works": ["Принять знания и ответственность по каждой линии поддержки", "Запустить единый Service Desk, мониторинг и отчётность"]},
+        {"stage_code": "complex_operation", "works": ["Оказывать L1, L2 и L3 по отдельным очередям и SLA", "Управлять межлинейными эскалациями и major incident"]}
+      ],
+      "exclusions": []
+    },
+    {
+      "project_type_code": "SUP_L1",
+      "template_code": "managed_support",
+      "scope_dimensions": ["пользователи", "обращения в месяц", "каналы", "языки", "режим"],
+      "exclude_work_codes": ["service_transition.configure_service_tooling", "service_transition.configure_observability", "service_operation.handle_incidents_requests", "service_operation.perform_routine_operations", "service_operation.monitor_and_restore"],
+      "additions": [
+        {"stage_code": "service_transition", "works": ["Разработать скрипты приёма и маршрутизации", "Настроить обязательные поля, категории, каталог и шаблоны отчётов", "Обучить операторов и провести пилот L1"]},
+        {"stage_code": "service_operation", "works": ["Принимать обращения по телефону, email и порталу", "Регистрировать, категоризировать, решать типовые запросы и маршрутизировать на L2/L3", "Поддерживать базу знаний и контролировать FCR"]}
+      ],
+      "exclusions": ["Экспертное устранение L2/L3, если оно явно не включено"]
+    },
+    {
+      "project_type_code": "SUP_L2",
+      "template_code": "managed_support",
+      "scope_dimensions": ["рабочие места", "пользователи", "площадки", "выезды", "устройства"],
+      "additions": [
+        {"stage_code": "service_transition", "works": ["Инвентаризировать АРМ, периферию, стандартные образы и локальные особенности", "Сформировать удалённые и выездные маршруты поддержки"]},
+        {"stage_code": "service_operation", "works": ["Удалённо диагностировать и устранять неисправности АРМ", "Выполнять выездные работы, замену, установку ПО и периферии", "Обрабатывать перемещения, onboarding/offboarding пользователей"]}
+      ],
+      "exclusions": ["Ремонт оборудования вне согласованного уровня", "Проектные миграции без отдельного scope"]
+    },
+    {
+      "project_type_code": "SUP_L3_HW",
+      "template_code": "managed_support",
+      "scope_dimensions": ["КЕ оборудования", "модели", "вендоры", "гарантия", "запасные части"],
+      "additions": [
+        {"stage_code": "service_transition", "works": ["Снять конфигурации, серийные номера, гарантийный статус и firmware baseline", "Настроить вендорские эскалации и логистику ЗИП"]},
+        {"stage_code": "service_operation", "works": ["Проводить аппаратную диагностику и регламентные проверки", "Организовывать ремонт/замену и сопровождать кейсы вендора", "Обновлять firmware и выполнять аварийно-восстановительные работы"]}
+      ],
+      "exclusions": ["Стоимость ЗИП и вендорской поддержки без явного включения"]
+    },
+    {
+      "project_type_code": "SUP_L3_SW",
+      "template_code": "managed_support",
+      "scope_dimensions": ["ОС", "виртуализация", "БД", "сеть", "инфраструктурные сервисы", "КЕ"],
+      "additions": [
+        {"stage_code": "service_transition", "works": ["Зафиксировать версии, конфигурации, зависимости, runbook и технический долг"]},
+        {"stage_code": "service_operation", "works": ["Администрировать платформы и инфраструктурные сервисы", "Выполнять изменения, обновления, анализ производительности и capacity", "Проверять backup/restore, репликацию и аварийное восстановление"]}
+      ],
+      "exclusions": ["Разработка прикладного кода", "Крупные обновления и миграции без отдельного проекта"]
+    },
+    {
+      "project_type_code": "SUP_SUPPLIER",
+      "template_code": "managed_support",
+      "scope_dimensions": ["подрядчики", "регионы", "площадки", "SLA подрядчиков", "маржинальность"],
+      "additions": [
+        {"stage_code": "partner_sourcing", "works": ["Проверить покрытие, компетенции, ставки и резерв подрядчиков", "Согласовать OLA, документооборот, NDA и порядок замены ресурсов"]},
+        {"stage_code": "service_operation", "works": ["Назначать и контролировать работы подрядчиков", "Принимать подтверждения, акты и исполнительную документацию"]},
+        {"stage_code": "service_governance", "works": ["Контролировать OLA-to-SLA, загрузку, качество и экономику подрядчиков"]}
+      ],
+      "exclusions": []
+    },
+    {
+      "project_type_code": "SUP_IT_Audit",
+      "template_code": "audit",
+      "scope_dimensions": ["серверы", "ВМ", "сети", "СХД", "БД", "сервисы", "площадки", "процессы"],
+      "additions": [
+        {"stage_code": "current_state_assessment", "works": ["Оценить серверную и сетевую архитектуру, почту, AD, БД, резервирование и мониторинг", "Оценить производительность, отказоустойчивость, масштабируемость и эксплуатационные процессы"]},
+        {"stage_code": "recommendations_roadmap", "works": ["Разработать предложения по модернизации инфраструктурных доменов", "Подготовить верхнеуровневую оценку ресурсов и последовательность изменений"]}
+      ],
+      "exclusions": ["Активный пентест без отдельного письменного разрешения"]
+    },
+    {
+      "project_type_code": "SUP_IT_Consulting",
+      "template_code": "consulting_design",
+      "scope_dimensions": ["архитектурные домены", "регламенты", "варианты", "RTO/RPO", "процессы"],
+      "additions": [
+        {"stage_code": "target_solution", "works": ["Спроектировать целевые сети, виртуализацию, СХД/СРК, DR, мониторинг и инфраструктурные сервисы по scope", "Разработать эксплуатационные регламенты и RACI"]},
+        {"stage_code": "migration_roadmap", "works": ["Разработать планы перехода по каждому архитектурному домену и общий критический путь"]}
+      ],
+      "exclusions": ["Фактическое внедрение и поставка"]
+    },
+    {
+      "project_type_code": "SUP_IT_Implementation",
+      "template_code": "implementation",
+      "scope_dimensions": ["компоненты", "экземпляры", "интеграции", "пользователи", "данные", "волны"],
+      "additions": [
+        {"stage_code": "deployment", "works": ["Установить и настроить AD, почту, VPN, сеть, виртуализацию или иные заявленные сервисы", "Настроить DNS, сертификаты, мониторинг, backup и интеграции"]},
+        {"stage_code": "cutover_migration", "works": ["Перенести роли, конфигурации, пользователей и данные по волнам", "Проверить репликацию и стабилизировать сервисы", "Вывести наследуемые компоненты"]}
+      ],
+      "exclusions": ["Оборудование и лицензии, если они не включены в спецификацию"]
+    },
+    {
+      "project_type_code": "SUP_Custom_Development",
+      "template_code": "implementation",
+      "scope_dimensions": ["функциональные блоки", "экраны", "API", "интеграции", "объекты данных", "миграция", "окружения", "критерии приёмки"],
+      "additions": [
+        {"stage_code": "implementation_discovery", "works": ["Уточнить функциональные сценарии, модель данных, интеграционные контракты и нефункциональные требования"]},
+        {"stage_code": "solution_design", "works": ["Спроектировать архитектуру приложения, интерфейсы, API, модель данных и стратегию тестирования"]},
+        {"stage_code": "deployment", "works": ["Реализовать подтверждённые функциональные блоки и интеграции по критериям приёмки"]},
+        {"stage_code": "validation_acceptance", "works": ["Выполнить функциональное, интеграционное и приёмочное тестирование разработанного решения"]}
+      ],
+      "exclusions": ["Лицензии, оборудование и внешние сервисы без подтверждённой стоимости"]
+    },
+    {
+      "project_type_code": "SUP_Cloud_Consulting",
+      "template_code": "consulting_design",
+      "scope_dimensions": ["нагрузки", "зависимости", "аккаунты", "landing zone", "TCO", "волны"],
+      "additions": [
+        {"stage_code": "consulting_discovery", "works": ["Провести assessment портфеля и готовности организации", "Классифицировать стратегии миграции нагрузок"]},
+        {"stage_code": "target_solution", "works": ["Спроектировать landing zone, IAM, сеть, безопасность, управление и операционную модель"]},
+        {"stage_code": "migration_roadmap", "works": ["Сформировать migration waves, TCO, критерии go/no-go и план компетенций"]}
+      ],
+      "exclusions": ["Потребление облачных ресурсов", "Фактическая миграция"]
+    },
+    {
+      "project_type_code": "SUP_Cloud_IaaS",
+      "template_code": "cloud_service",
+      "scope_dimensions": ["vCPU", "RAM", "storage", "IOPS", "трафик", "зоны", "RTO/RPO", "месяцы"],
+      "additions": [
+        {"stage_code": "cloud_provisioning", "works": ["Создать tenant/VPC/VNet, подсети, security groups, ВМ, диски и балансировку", "Настроить VPN/IPSec, backup, monitoring и бюджеты"]},
+        {"stage_code": "cloud_operation", "works": ["Контролировать доступность, ёмкость, резервирование, патчи и потребление IaaS"]}
+      ],
+      "exclusions": ["Администрирование приложений и ОС сверх согласованной managed-модели"]
+    },
+    {
+      "project_type_code": "SUP_Cloud_PaaS",
+      "template_code": "cloud_service",
+      "scope_dimensions": ["платформенные сервисы", "экземпляры", "лицензии", "окружения", "SLA"],
+      "additions": [
+        {"stage_code": "cloud_solution_offer", "works": ["Выбрать управляемые БД, балансировщики, object storage и иные PaaS-компоненты", "Зафиксировать ограничения платформы и shared responsibility"]},
+        {"stage_code": "cloud_provisioning", "works": ["Развернуть и параметризовать PaaS, сетевые доступы, backup и мониторинг"]}
+      ],
+      "exclusions": ["Изменение внутренней реализации управляемого сервиса провайдера"]
+    },
+    {
+      "project_type_code": "SUP_Cloud_SaaS",
+      "template_code": "cloud_service",
+      "scope_dimensions": ["пользователи", "тенанты", "тариф", "модули", "интеграции", "срок"],
+      "additions": [
+        {"stage_code": "cloud_provisioning", "works": ["Создать и брендировать тенант, настроить роли, политики и SSO", "Настроить модули и интеграции в границах тарифа"]},
+        {"stage_code": "cloud_onboarding", "works": ["Загрузить пользователей/справочники, провести onboarding и проверить ключевые сценарии"]},
+        {"stage_code": "cloud_operation", "works": ["Администрировать подписку и пользователей, поддерживать сервис и коммуникации по релизам"]}
+      ],
+      "exclusions": ["Кастомная разработка вне продукта"]
+    },
+    {
+      "project_type_code": "SUP_Cloud_Subscription",
+      "template_code": "cloud_service",
+      "scope_dimensions": ["SKU", "пользователи/устройства", "метрика лицензирования", "вендор", "срок"],
+      "additions": [
+        {"stage_code": "cloud_contract", "works": ["Зарегистрировать сделку и подтвердить SKU, метрики, период, поддержку и условия true-up"]},
+        {"stage_code": "cloud_provisioning", "works": ["Активировать подписку, привязать тенант и передать административные права"]},
+        {"stage_code": "cloud_renewal_exit", "works": ["Провести сверку потребления и продление без разрыва сервиса"]}
+      ],
+      "exclusions": ["Внедрение и настройка продукта без явного service scope"]
+    },
+    {
+      "project_type_code": "SUP_App_Support",
+      "template_code": "managed_support",
+      "scope_dimensions": ["приложения", "модули", "интеграции", "релизы", "тикеты", "часовой банк"],
+      "additions": [
+        {"stage_code": "service_transition", "works": ["Изучить код, архитектуру, инфраструктуру, backlog и историю инцидентов", "Развернуть/проверить тестовый контур, логирование, мониторинг и backup", "Провести совместный разбор первых боевых тикетов"]},
+        {"stage_code": "service_operation", "works": ["Исправлять дефекты и инциденты приложения", "Анализировать логи, интеграции и производительность", "Формализовать и реализовывать согласованные доработки, тестировать и выпускать релизы"]}
+      ],
+      "exclusions": ["Новые крупные функции сверх согласованного пакета/бюджета"]
+    },
+    {
+      "project_type_code": "SUP_IT_office",
+      "template_code": "implementation",
+      "scope_dimensions": ["пользователи", "профили", "устройства", "шаблоны", "макросы", "форматы документов", "волны"],
+      "additions": [
+        {"stage_code": "implementation_discovery", "works": ["Инвентаризировать версии Office, плагины, шаблоны, макросы и критичные форматы", "Сегментировать пользователей и сценарии совместимости"]},
+        {"stage_code": "pilot", "works": ["Установить пакет пилотной группе, проверить документы, макросы, печать и интеграции", "Собрать обратную связь и определить remediation"]},
+        {"stage_code": "cutover_migration", "works": ["Развернуть ПО волнами, перенести настройки и ассоциации файлов", "Организовать поддержку периода адаптации"]},
+        {"stage_code": "knowledge_transfer", "works": ["Обучить пользователей и администраторов, подготовить инструкции по отличиям"]}
+      ],
+      "exclusions": ["Переделка всех пользовательских документов и макросов без инвентаризации и отдельной оценки"]
+    },
+    {
+      "project_type_code": "SUP_import_sub_infra",
+      "template_code": "implementation",
+      "scope_dimensions": ["заменяемые платформы", "аналоги", "функции", "интеграции", "данные", "пользователи", "волны"],
+      "additions": [
+        {"stage_code": "implementation_discovery", "works": ["Сопоставить функциональность, совместимость, лицензирование и ограничения отечественных аналогов", "Выявить неподдерживаемые зависимости и технический долг"]},
+        {"stage_code": "pilot", "works": ["Проверить функциональный паритет, производительность, безопасность и эксплуатацию на пилоте"]},
+        {"stage_code": "cutover_migration", "works": ["Перенести конфигурации, данные и пользователей волнами с планом отката", "Обеспечить параллельную эксплуатацию по необходимости", "Вывести зарубежную платформу и закрыть лицензии/доступы"]}
+      ],
+      "exclusions": ["Обещание полного функционального паритета до пилотной проверки"]
+    },
+    {
+      "project_type_code": "SUP_HW",
+      "template_code": "supply",
+      "scope_dimensions": ["позиции", "единицы", "серийные номера", "партии", "площадки", "гарантия"],
+      "additions": [
+        {"stage_code": "supply_requirements", "works": ["Подобрать конфигурацию серверов, СХД, сети или АРМ и допустимые аналоги", "Проверить стойки, питание, порты и совместимость"]},
+        {"stage_code": "supply_delivery", "works": ["Организовать логистику по партиям и площадкам", "Провести входной контроль, сверку серийных номеров и комплектности"]},
+        {"stage_code": "supply_acceptance", "works": ["Передать гарантию, вендорские регистрации и данные для CMDB"]}
+      ],
+      "exclusions": ["Монтаж и ПНР без явного сигнала installation"]
+    },
+    {
+      "project_type_code": "SUP_SW",
+      "template_code": "supply",
+      "scope_dimensions": ["SKU", "метрика лицензирования", "пользователи/ядра/устройства", "срок", "поддержка"],
+      "additions": [
+        {"stage_code": "supply_requirements", "works": ["Проверить редакцию, SKU, метрику, количество, срок, территорию и право переноса"]},
+        {"stage_code": "supply_delivery", "works": ["Передать ключи/сертификаты, активировать entitlement и доступ к загрузкам/поддержке"]},
+        {"stage_code": "supply_acceptance", "works": ["Сверить права использования и внести лицензии в реестр"]}
+      ],
+      "exclusions": ["Инсталляция, настройка и миграция без отдельного scope"]
+    },
+    {
+      "project_type_code": "SUP_Leasing",
+      "template_code": "leasing",
+      "scope_dimensions": ["единицы", "конфигурации", "площадки", "месяцы", "SLA замены", "остаточная стоимость"],
+      "additions": [
+        {"stage_code": "lease_delivery", "works": ["Промаркировать активы и зафиксировать исходное состояние фотографиями/чек-листом"]},
+        {"stage_code": "lease_operation", "works": ["Вести движения, замены, состояние и ежемесячную сверку активов"]},
+        {"stage_code": "lease_return_renewal", "works": ["Безопасно удалить данные с носителей и подтвердить возврат/выкуп каждого актива"]}
+      ],
+      "exclusions": []
+    },
+    {
+      "project_type_code": "SEC_Audit",
+      "template_code": "audit",
+      "scope_dimensions": ["требования", "области контроля", "активы", "СЗИ", "периметры", "стейкхолдеры"],
+      "additions": [
+        {"stage_code": "evidence_collection", "works": ["Собрать ОРД, модели угроз, реестры активов, инциденты и журналы СЗИ"]},
+        {"stage_code": "current_state_assessment", "works": ["Провести gap-анализ требований и оценку зрелости СУИБ", "Проанализировать конфигурации СЗИ и внешний периметр в разрешённых границах", "Оценить обработку ПДн/КИИ/ГИС при наличии такого scope"]},
+        {"stage_code": "gap_risk_assessment", "works": ["Сформировать доказательный реестр несоответствий, уязвимостей и карту рисков ИБ"]},
+        {"stage_code": "recommendations_roadmap", "works": ["Разработать план обработки рисков, соответствия и развития СУИБ с KPI"]}
+      ],
+      "exclusions": ["Эксплуатация уязвимостей и социальная инженерия без отдельно подписанных Rules of Engagement"]
+    },
+    {
+      "project_type_code": "SEC_Support",
+      "template_code": "managed_support",
+      "scope_dimensions": ["СЗИ", "кластеры/ноды", "правила", "события", "обновления", "режим 24/7"],
+      "additions": [
+        {"stage_code": "service_transition", "works": ["Снять baseline конфигураций, политик, лицензий, сертификатов и кластерного состояния", "Настроить защищённый удалённый доступ и вендорские кейсы"]},
+        {"stage_code": "service_operation", "works": ["Мониторить состояние СЗИ и обрабатывать события/инциденты", "Выполнять запросы на изменения правил после анализа и тестирования", "Проводить обновления в согласованные окна и проверять кластер", "Выполнять аварийно-восстановительные работы"]}
+      ],
+      "exclusions": ["Изменения политик безопасности без авторизации заказчика"]
+    },
+    {
+      "project_type_code": "SEC_Implementation",
+      "template_code": "implementation",
+      "scope_dimensions": ["СЗИ", "узлы", "политики/правила", "сегменты", "интеграции", "события в секунду", "пользователи"],
+      "additions": [
+        {"stage_code": "solution_design", "works": ["Разработать архитектуру СЗИ, политики, матрицу потоков, sizing и сценарии защиты"]},
+        {"stage_code": "deployment", "works": ["Установить СЗИ, выполнить hardening, настроить правила, политики, интеграции и журналирование"]},
+        {"stage_code": "validation_acceptance", "works": ["Проверить разрешающие/блокирующие сценарии, отказоустойчивость, производительность и формирование событий"]},
+        {"stage_code": "knowledge_transfer", "works": ["Передать администраторские runbook и обучить эксплуатации/реагированию"]}
+      ],
+      "exclusions": ["Аттестация или сертификация, если она явно не включена"]
+    },
+    {
+      "project_type_code": "SEC_HW",
+      "template_code": "supply",
+      "scope_dimensions": ["ПАК/апплаенсы", "производительность", "интерфейсы", "сертификаты", "лицензии", "гарантия"],
+      "additions": [
+        {"stage_code": "supply_requirements", "works": ["Проверить sizing по трафику/сессиям/EPS, HA-комплектацию и интерфейсы"]},
+        {"stage_code": "supply_security", "works": ["Проверить сертификаты ФСТЭК/ФСБ по scope, версии и допустимость применения"]},
+        {"stage_code": "supply_acceptance", "works": ["Передать лицензии функций, гарантию и вендорскую поддержку вместе с ПАК"]}
+      ],
+      "exclusions": ["Монтаж, настройка политик и ПНР без явного scope"]
+    },
+    {
+      "project_type_code": "SEC_SW",
+      "template_code": "supply",
+      "scope_dimensions": ["продукт СЗИ", "лицензионная метрика", "узлы/пользователи", "сертификаты", "срок поддержки"],
+      "additions": [
+        {"stage_code": "supply_requirements", "works": ["Проверить редакцию, лицензионную метрику, совместимость агентов/серверов и срок техподдержки"]},
+        {"stage_code": "supply_security", "works": ["Подтвердить применимые сертификаты, версии и условия обновления"]},
+        {"stage_code": "supply_delivery", "works": ["Передать ключи, дистрибутивы, entitlement и доступ к базе знаний вендора"]}
+      ],
+      "exclusions": ["Развёртывание агентов, серверов и политик без отдельного scope"]
+    },
+    {
+      "project_type_code": "SEC_Complex",
+      "template_code": "complex",
+      "scope_dimensions": ["домены ИБ", "СЗИ", "площадки", "потоки аудита/поставки/внедрения/поддержки", "регуляторные требования"],
+      "additions": [
+        {"stage_code": "complex_discovery", "works": ["Провести аудит текущих мер защиты, архитектуры, ОРД и зрелости процессов", "Связать активы, угрозы, требования и целевые СЗИ"]},
+        {"stage_code": "complex_design", "works": ["Спроектировать эшелонированную защиту и целевую операционную модель ИБ", "Разработать план обработки рисков и последовательность внедрения СЗИ"]},
+        {"stage_code": "complex_transition", "works": ["Скоординировать поставку, внедрение, настройку политик, миграцию и обучение по СЗИ"]},
+        {"stage_code": "complex_acceptance", "works": ["Провести сквозные сценарии обнаружения, блокирования, реагирования и восстановления"]}
+      ],
+      "exclusions": ["Регуляторная аттестация, пентест и SOC-операции без явного включения"]
+    }
+  ]
+}

@@ -10,7 +10,11 @@ from app.api import router
 from app.catalog import seed_project_types
 from app.config import Settings
 from app.database import create_database, ensure_schema_compatibility
+from app.effort_estimator import AdaptiveEffortEstimator
+from app.excel_estimate import ExcelEstimateService
 from app.models import Base
+from app.stage_planner import StagePlanner
+from app.work_generator import WorkGenerator
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,6 +26,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = resolved_settings
         app.state.engine = engine
         app.state.session_factory = session_factory
+        stage_planner = StagePlanner.from_files(
+            resolved_settings.project_types_path.resolve(),
+            resolved_settings.project_stage_templates_path.resolve(),
+        )
+        app.state.stage_planner = stage_planner
+        work_generator = WorkGenerator.from_file(
+            resolved_settings.project_work_templates_path.resolve(), stage_planner
+        )
+        app.state.work_generator = work_generator
+        effort_estimator = AdaptiveEffortEstimator.from_file(
+            resolved_settings.role_effort_catalog_path.resolve()
+        )
+        app.state.effort_estimator = effort_estimator
+        app.state.excel_estimate_service = ExcelEstimateService(
+            resolved_settings.excel_estimate_template_path.resolve(),
+            role_catalog_path=resolved_settings.role_effort_catalog_path.resolve(),
+            recalculation_command=resolved_settings.excel_recalculation_command,
+            recalculation_timeout_seconds=(
+                resolved_settings.excel_recalculation_timeout_seconds
+            ),
+        )
 
         if resolved_settings.auto_create_schema:
             async with engine.begin() as connection:
@@ -31,7 +56,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_factory, resolved_settings.project_types_path.resolve()
         )
 
-        worker = AnalysisWorker(session_factory, resolved_settings)
+        worker = AnalysisWorker(
+            session_factory,
+            resolved_settings,
+            stage_planner,
+            work_generator,
+            effort_estimator,
+        )
         app.state.analysis_worker = worker
         if resolved_settings.analysis_worker_enabled:
             await worker.recover_interrupted()

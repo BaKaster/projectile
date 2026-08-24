@@ -12,7 +12,10 @@ from app.analysis_contracts import (
     DocumentDigest,
     ExtractedFact,
     MaterialQuestion,
+    StageSignalEvidence,
 )
+from app.stage_contracts import ProjectStagePlan, StagePlanContext
+from app.work_contracts import GeneratedWorkPlan, WorkPlanContext
 
 
 class ProjectCreate(BaseModel):
@@ -71,6 +74,7 @@ class AnalysisRunAccepted(BaseModel):
 
 class ProjectAnalysisResponse(BaseModel):
     id: uuid.UUID
+    project_name: str | None = None
     project_type_code: str | None
     confidence: Literal["low", "medium", "high"]
     summary: str
@@ -81,11 +85,24 @@ class ProjectAnalysisResponse(BaseModel):
     gaps: list[DataGap]
     questions: list[MaterialQuestion]
     warnings: list[str]
+    stage_signals: list[StageSignalEvidence]
+    stage_plan: ProjectStagePlan | None = None
+    work_plan: GeneratedWorkPlan | None = None
     document_digests: list[DocumentDigest]
     source_document_ids: list[uuid.UUID]
     model_name: str
     prompt_version: str
     created_at: datetime
+
+
+class StagePlanRequest(StagePlanContext):
+    pass
+
+
+class WorkPlanRequest(BaseModel):
+    stage_context: StagePlanContext = Field(default_factory=StagePlanContext)
+    work_context: WorkPlanContext = Field(default_factory=WorkPlanContext)
+    effort_mode: Literal["auto", "deterministic"] = "auto"
 
 
 class AnalysisRunResponse(BaseModel):
@@ -98,3 +115,71 @@ class AnalysisRunResponse(BaseModel):
     result: ProjectAnalysisResponse | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ChatCreate(BaseModel):
+    name: str | None = Field(default=None, max_length=300)
+
+
+class ChatUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+
+
+class ChatMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=50_000)
+
+
+class ChatMessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    role: Literal["user", "assistant", "system"]
+    kind: Literal["query", "answer", "system"]
+    content: str
+    created_at: datetime
+
+
+class ChatMessageAccepted(BaseModel):
+    message: ChatMessageResponse
+    analysis: AnalysisRunAccepted
+
+
+class QuestionAnswerResolved(BaseModel):
+    message: ChatMessageResponse
+    analysis: AnalysisRunResponse
+
+
+class ChatSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    last_message: str | None
+    latest_status: AnalysisStatus | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatDetail(BaseModel):
+    id: uuid.UUID
+    name: str
+    messages: list[ChatMessageResponse]
+    latest_analysis: AnalysisRunResponse | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuestionAnswerCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=50_000)
+
+
+class ProjectTypeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    direction_code: str
+    name: str
+    details: str | None
+
+
+class ProjectTypeUpdate(BaseModel):
+    project_type_code: str = Field(min_length=1, max_length=100)
