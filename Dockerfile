@@ -33,13 +33,11 @@ RUN apt-get update \
 COPY pyproject.toml README.md ./
 COPY app/__init__.py ./app/__init__.py
 
-RUN --mount=type=cache,id=projectile-pip-torch,target=/root/.cache/pip \
-    pip install \
+RUN pip install \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-RUN --mount=type=cache,id=projectile-pip-app,target=/root/.cache/pip \
-    pip install ".[recognition]"
+RUN pip install ".[recognition]"
 
 # Application code changes no longer invalidate the heavyweight ML dependency layers.
 COPY app ./app
