@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     codex_cli: str = "codex"
     codex_timeout_seconds: int = Field(default=300, gt=0, le=1800)
     codex_auth_file: Path | None = None
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "KEY_OPENAI", "OPENAI_API_KEY", "PROJECTILE_OPENAI_API_KEY"
+        ),
+    )
     analysis_model: str = "gpt-5.4"
     analysis_reasoning_effort: str = "medium"
     analysis_ai_direct_estimation: bool = True
@@ -50,3 +56,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def openai_api_key_value(self) -> str | None:
+        if self.openai_api_key is None:
+            return None
+        value = self.openai_api_key.get_secret_value().strip()
+        return value or None

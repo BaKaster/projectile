@@ -120,11 +120,17 @@ def resolve_codex_cli(executable: str = "codex") -> Path:
     )
 
 
-def codex_cli_available(executable: str, auth_file: Path | None) -> bool:
+def codex_cli_available(
+    executable: str,
+    auth_file: Path | None,
+    api_key: str | None = None,
+) -> bool:
     try:
         resolved = resolve_codex_cli(executable)
     except CodexCliError:
         return False
+    if api_key:
+        return True
     if auth_file is not None:
         return auth_file.expanduser().is_file()
     try:
@@ -140,7 +146,10 @@ def codex_cli_available(executable: str, auth_file: Path | None) -> bool:
     return status.returncode == 0
 
 
-def _codex_environment(codex_home: Path | None) -> dict[str, str]:
+def _codex_environment(
+    codex_home: Path | None,
+    api_key: str | None = None,
+) -> dict[str, str]:
     environment = {
         name: os.environ[name]
         for name in _SAFE_ENVIRONMENT_NAMES
@@ -148,6 +157,8 @@ def _codex_environment(codex_home: Path | None) -> dict[str, str]:
     }
     if codex_home is not None:
         environment["CODEX_HOME"] = str(codex_home)
+    if api_key:
+        environment["OPENAI_API_KEY"] = api_key
     return environment
 
 
@@ -162,12 +173,14 @@ class CodexCliClient:
         reasoning_effort: str = "medium",
         timeout_seconds: int = 300,
         auth_file: Path | None = None,
+        api_key: str | None = None,
     ) -> None:
         self.executable = executable
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.timeout_seconds = timeout_seconds
         self.auth_file = auth_file
+        self.api_key = api_key
 
     async def parse[T: BaseModel](
         self,
@@ -227,6 +240,10 @@ class CodexCliClient:
             ) from error
 
     def _prepare_codex_home(self, runtime_root: Path) -> Path | None:
+        # An explicitly configured API key takes precedence. Removing it restores
+        # the existing auth.json-based CLI flow without changing application code.
+        if self.api_key:
+            return None
         if self.auth_file is None:
             return None
         source = self.auth_file.expanduser()
@@ -279,7 +296,7 @@ class CodexCliClient:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=os.name != "nt",
-            env=_codex_environment(codex_home),
+            env=_codex_environment(codex_home, self.api_key),
         )
         try:
             stdout, stderr = await asyncio.wait_for(

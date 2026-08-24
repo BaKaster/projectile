@@ -123,6 +123,7 @@ class CodexProjectAnalyzer:
         codex_cli: str = "codex",
         codex_timeout_seconds: int = 300,
         codex_auth_file: Path | None = None,
+        openai_api_key: str | None = None,
     ) -> None:
         self.client = CodexCliClient(
             executable=codex_cli,
@@ -130,6 +131,7 @@ class CodexProjectAnalyzer:
             reasoning_effort=reasoning_effort,
             timeout_seconds=codex_timeout_seconds,
             auth_file=codex_auth_file,
+            api_key=openai_api_key,
         )
         self.max_input_characters = max_input_characters
         self.digest_concurrency = digest_concurrency
