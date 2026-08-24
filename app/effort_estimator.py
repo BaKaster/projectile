@@ -196,7 +196,7 @@ class AdaptiveEffortEstimator:
         codex_cli: str = "codex",
         codex_timeout_seconds: int = 300,
         codex_auth_file: Path | None = None,
-        openai_api_key: str | None = None,
+        codex_persist_auth_file: bool = False,
     ) -> GeneratedWorkPlan:
         baseline = self.estimate(plan)
         prompt = self._ai_prompt(baseline)
@@ -206,7 +206,7 @@ class AdaptiveEffortEstimator:
             reasoning_effort=reasoning_effort,
             timeout_seconds=codex_timeout_seconds,
             auth_file=codex_auth_file,
-            api_key=openai_api_key,
+            persist_auth_file=codex_persist_auth_file,
         )
         response = await client.parse(
             input=[
@@ -243,7 +243,7 @@ class AdaptiveEffortEstimator:
         codex_cli: str = "codex",
         codex_timeout_seconds: int = 300,
         codex_auth_file: Path | None = None,
-        openai_api_key: str | None = None,
+        codex_persist_auth_file: bool = False,
         project_summary: str = "",
         assumptions: list[str] | None = None,
         warnings: list[str] | None = None,
@@ -264,7 +264,7 @@ class AdaptiveEffortEstimator:
             reasoning_effort=reasoning_effort,
             timeout_seconds=codex_timeout_seconds,
             auth_file=codex_auth_file,
-            api_key=openai_api_key,
+            persist_auth_file=codex_persist_auth_file,
         )
         response = await client.parse(
             input=[

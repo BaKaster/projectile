@@ -93,32 +93,22 @@ def test_codex_cli_rejects_output_outside_contract(monkeypatch) -> None:
         )
 
 
-def test_codex_child_environment_only_forwards_explicit_api_key(
+def test_codex_child_environment_excludes_application_secrets(
     monkeypatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("PROJECTILE_DATABASE_URL", "secret-database-url")
     monkeypatch.setenv("OPENAI_API_KEY", "must-never-reach-codex-cli")
     monkeypatch.setenv("PATH", "safe-path")
 
-    environment = _codex_environment(tmp_path, "explicit-codex-api-key")
+    environment = _codex_environment(tmp_path)
 
     assert environment["PATH"] == "safe-path"
     assert environment["CODEX_HOME"] == str(tmp_path)
     assert "PROJECTILE_DATABASE_URL" not in environment
-    assert environment["OPENAI_API_KEY"] == "explicit-codex-api-key"
+    assert "OPENAI_API_KEY" not in environment
 
 
-def test_codex_cli_available_accepts_explicit_api_key(
-    monkeypatch, tmp_path: Path
-) -> None:
-    executable = tmp_path / "codex"
-    executable.touch()
-    monkeypatch.setattr("app.codex_cli.resolve_codex_cli", lambda value: executable)
-
-    assert codex_cli_available("codex", None, "configured-key") is True
-
-
-def test_auth_file_takes_precedence_and_api_key_remains_fallback(
+def test_persistent_auth_uses_source_codex_home(
     tmp_path: Path,
 ) -> None:
     auth_file = tmp_path / "auth.json"
@@ -127,18 +117,23 @@ def test_auth_file_takes_precedence_and_api_key_remains_fallback(
     runtime_root.mkdir()
 
     client = CodexCliClient(
-        model="test-model", auth_file=auth_file, api_key="configured-key"
+        model="test-model", auth_file=auth_file, persist_auth_file=True
     )
     codex_home = client._prepare_codex_home(runtime_root)
-    assert codex_home is not None
-    assert (codex_home / "auth.json").read_text(encoding="utf-8") == '{"tokens":{}}'
+    assert codex_home == tmp_path.resolve()
 
-    missing_auth_client = CodexCliClient(
-        model="test-model",
-        auth_file=tmp_path / "missing-auth.json",
-        api_key="configured-key",
-    )
-    assert missing_auth_client._prepare_codex_home(runtime_root) is None
+
+def test_ephemeral_auth_still_copies_source_file(tmp_path: Path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text('{"tokens":{}}', encoding="utf-8")
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+
+    client = CodexCliClient(model="test-model", auth_file=auth_file)
+    codex_home = client._prepare_codex_home(runtime_root)
+    assert codex_home is not None
+    assert codex_home != tmp_path
+    assert (codex_home / "auth.json").read_text(encoding="utf-8") == '{"tokens":{}}'
 
 
 def test_codex_cli_available_checks_login_without_auth_file(

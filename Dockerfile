@@ -44,6 +44,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Application code changes no longer invalidate the heavyweight ML dependency layers.
 COPY app ./app
 COPY data ./data
+COPY scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 COPY ["Шаблон.xlsx", "/app/data/estimate-template.xlsx"]
 
 ENV HF_HOME=/home/appuser/.cache/huggingface
@@ -52,6 +53,7 @@ RUN rm -f /usr/local/bin/codex \
     && ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
     && useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/storage /home/appuser/.cache /home/appuser/.codex \
+    && chmod +x /app/scripts/docker-entrypoint.sh \
     && chown -R appuser:appuser /app \
     && chown -R appuser:appuser /home/appuser/.cache /home/appuser/.codex
 
@@ -59,4 +61,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/scripts/docker-entrypoint.sh"]

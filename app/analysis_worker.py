@@ -200,7 +200,7 @@ class AnalysisWorker:
             codex_cli=self.settings.codex_cli,
             codex_timeout_seconds=self.settings.codex_timeout_seconds,
             codex_auth_file=self.settings.codex_auth_file,
-            openai_api_key=self.settings.openai_api_key_value,
+            codex_persist_auth_file=self.settings.codex_persist_auth_file,
         )
         analyzer_output = await analyzer.analyze(
             catalog_for_prompt(catalog_rows),
@@ -416,7 +416,9 @@ class AnalysisWorker:
                             codex_cli=self.settings.codex_cli,
                             codex_timeout_seconds=self.settings.codex_timeout_seconds,
                             codex_auth_file=self.settings.codex_auth_file,
-                            openai_api_key=self.settings.openai_api_key_value,
+                            codex_persist_auth_file=(
+                                self.settings.codex_persist_auth_file
+                            ),
                             project_summary=result.summary,
                             assumptions=result.assumptions,
                             warnings=result.warnings,

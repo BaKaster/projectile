@@ -150,11 +150,7 @@ async def build_project_work_plan(
         if (
             payload.effort_mode == "auto"
             and settings is not None
-            and codex_cli_available(
-                settings.codex_cli,
-                settings.codex_auth_file,
-                settings.openai_api_key_value,
-            )
+            and codex_cli_available(settings.codex_cli, settings.codex_auth_file)
         ):
             try:
                 return await effort_estimator.plan_with_ai(
@@ -164,7 +160,7 @@ async def build_project_work_plan(
                     codex_cli=settings.codex_cli,
                     codex_timeout_seconds=settings.codex_timeout_seconds,
                     codex_auth_file=settings.codex_auth_file,
-                    openai_api_key=settings.openai_api_key_value,
+                    codex_persist_auth_file=settings.codex_persist_auth_file,
                 )
             except Exception as error:  # noqa: BLE001 - return a useful deterministic plan
                 logger.warning(
