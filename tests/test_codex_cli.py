@@ -118,7 +118,7 @@ def test_codex_cli_available_accepts_explicit_api_key(
     assert codex_cli_available("codex", None, "configured-key") is True
 
 
-def test_api_key_takes_precedence_without_removing_auth_file_fallback(
+def test_auth_file_takes_precedence_and_api_key_remains_fallback(
     tmp_path: Path,
 ) -> None:
     auth_file = tmp_path / "auth.json"
@@ -126,15 +126,19 @@ def test_api_key_takes_precedence_without_removing_auth_file_fallback(
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()
 
-    keyed_client = CodexCliClient(
+    client = CodexCliClient(
         model="test-model", auth_file=auth_file, api_key="configured-key"
     )
-    assert keyed_client._prepare_codex_home(runtime_root) is None
-
-    fallback_client = CodexCliClient(model="test-model", auth_file=auth_file)
-    codex_home = fallback_client._prepare_codex_home(runtime_root)
+    codex_home = client._prepare_codex_home(runtime_root)
     assert codex_home is not None
     assert (codex_home / "auth.json").read_text(encoding="utf-8") == '{"tokens":{}}'
+
+    missing_auth_client = CodexCliClient(
+        model="test-model",
+        auth_file=tmp_path / "missing-auth.json",
+        api_key="configured-key",
+    )
+    assert missing_auth_client._prepare_codex_home(runtime_root) is None
 
 
 def test_codex_cli_available_checks_login_without_auth_file(

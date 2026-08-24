@@ -129,10 +129,10 @@ def codex_cli_available(
         resolved = resolve_codex_cli(executable)
     except CodexCliError:
         return False
+    if auth_file is not None and auth_file.expanduser().is_file():
+        return True
     if api_key:
         return True
-    if auth_file is not None:
-        return auth_file.expanduser().is_file()
     try:
         status = subprocess.run(
             [str(resolved), "login", "status"],
@@ -240,15 +240,12 @@ class CodexCliClient:
             ) from error
 
     def _prepare_codex_home(self, runtime_root: Path) -> Path | None:
-        # An explicitly configured API key takes precedence. Removing it restores
-        # the existing auth.json-based CLI flow without changing application code.
-        if self.api_key:
-            return None
-        if self.auth_file is None:
+        # A mounted auth.json keeps local/long-lived deployments on the existing
+        # CLI session. The API key is used when no auth file is available, as in
+        # stateless deployments.
+        if self.auth_file is None or not self.auth_file.expanduser().is_file():
             return None
         source = self.auth_file.expanduser()
-        if not source.is_file():
-            raise CodexCliError(f'Codex auth file not found at "{source}"')
         codex_home = runtime_root / "codex-home"
         codex_home.mkdir()
         target = codex_home / "auth.json"
@@ -296,7 +293,10 @@ class CodexCliClient:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=os.name != "nt",
-            env=_codex_environment(codex_home, self.api_key),
+            env=_codex_environment(
+                codex_home,
+                self.api_key if codex_home is None else None,
+            ),
         )
         try:
             stdout, stderr = await asyncio.wait_for(
