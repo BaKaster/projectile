@@ -20,6 +20,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
         g++ \
+        gosu \
         libarchive-tools \
         libgl1 \
         libglib2.0-0 \
@@ -54,8 +55,6 @@ RUN rm -f /usr/local/bin/codex \
     && chmod +x /app/scripts/docker-entrypoint.sh \
     && chown -R appuser:appuser /app \
     && chown -R appuser:appuser /home/appuser/.cache /home/appuser/.codex
-
-USER appuser
 
 EXPOSE 8000
 

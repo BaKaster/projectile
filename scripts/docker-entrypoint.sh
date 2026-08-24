@@ -7,6 +7,14 @@ unset OPENAI_API_KEY KEY_OPENAI PROJECTILE_OPENAI_API_KEY || true
 auth_file="${PROJECTILE_CODEX_AUTH_FILE:-}"
 auth_payload="${PROJECTILE_CODEX_AUTH_JSON_B64:-}"
 
+# Railway mounts a fresh persistent volume owned by root. Prepare only the
+# application-owned paths here, then drop privileges before starting the API.
+if [ "$(id -u)" = "0" ]; then
+    mkdir -p /app/persistent/storage /app/persistent/codex
+    chown -R appuser:appuser /app/persistent
+    exec gosu appuser "$0" "$@"
+fi
+
 if [ -n "$auth_file" ] && [ -n "$auth_payload" ] && [ ! -s "$auth_file" ]; then
     auth_dir=$(dirname "$auth_file")
     auth_tmp="${auth_file}.tmp"
