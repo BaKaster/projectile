@@ -339,11 +339,6 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
   .disclaimer { display: none; }
 }
 
-.rates-button { margin: 14px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: var(--ink); background: transparent; font: inherit; font-weight: 700; cursor: pointer; }
-.rates-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(9,9,35,.55); }
-.rates-modal.hidden { display: none; }
-.rates-card { position: relative; width: min(720px, 100%); max-height: 85vh; overflow: auto; background: var(--surface); color: var(--ink); border-radius: 18px; padding: 30px; box-shadow: 0 24px 70px rgba(0,0,0,.3); }
-.rates-card h2 { margin: 0 0 10px; }.rates-card p { line-height: 1.5; }.rates-card input[type=file] { display:block; margin:18px 0; max-width:100%; }.rates-auto { display:block; margin:14px 0; font-weight:600; }.rates-upload { border:0; border-radius:10px; padding:12px 16px; color:white; background:var(--accent); font:inherit; font-weight:800; cursor:pointer; }.rates-close { position:absolute; top:12px; right:15px; border:0; background:none; color:var(--ink); font-size:28px; cursor:pointer; }.rates-results { margin-top:20px; }.rates-list { display:grid; gap:8px; margin:14px 0; }.rates-row { display:flex; gap:9px; align-items:flex-start; padding:11px; border:1px solid var(--line); border-radius:9px; line-height:1.4; }
 
 @media print {
   .sidebar, .chat-header, .composer-wrap, .avatar, .message.user, .analysis-footer { display: none !important; }

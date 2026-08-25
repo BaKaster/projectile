@@ -50,7 +50,7 @@ from app.models import (
     RateImport,
     RoleRate,
 )
-from app.rates import parse_rate_text
+from app.rates import apply_rates_from_text, parse_rate_text
 from app.recognition import DocumentRecognizer
 from app.schemas import (
     AnalysisRunAccepted,
@@ -557,6 +557,9 @@ async def send_chat_message(
         raise HTTPException(status_code=404, detail="Chat not found")
     message = await _append_chat_message(
         session, project, payload.content, kind="query"
+    )
+    await apply_rates_from_text(
+        session, payload.content, source_name=f"chat:{project.id}"
     )
     run = await _queue_project_analysis(session, project.id)
     await session.commit()
@@ -1723,6 +1726,23 @@ def _analysis_estimate_payload(
         raise ExcelEstimateError(f"analysis cannot populate Excel template: {error}") from error
 
 
+async def _apply_current_rate_overrides(
+    payload: ExcelEstimateRequest, session: AsyncSession
+) -> None:
+    """Use the newest DB rate version when populating the Excel template."""
+    rows = (await session.scalars(
+        select(RoleRate).order_by(RoleRate.role_code, RoleRate.effective_from.desc())
+    )).all()
+    rates: dict[str, RoleRate] = {}
+    for row in rows:
+        rates.setdefault(row.role_code, row)
+    for work in payload.work_items:
+        for assignment in work.role_assignments:
+            if rate := rates.get(assignment.role):
+                assignment.sale_rate_override = rate.sale_rate
+                assignment.cost_rate_override = rate.cost_rate
+
+
 @router.get(
     "/api/v1/projects/{project_id}/analysis-runs/{run_id}/report.xlsx",
     response_class=Response,
@@ -1764,6 +1784,7 @@ async def download_analysis_xlsx(
     try:
         service = request.app.state.excel_estimate_service
         payload = _analysis_estimate_payload(project, result, run, service)
+        await _apply_current_rate_overrides(payload, session)
         content = service.build(payload)
     except ExcelEstimateError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

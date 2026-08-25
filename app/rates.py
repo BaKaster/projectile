@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import LaborRole, RoleRate
+from app.models import LaborRole, RateImport, RoleRate
 
 
 def seed_roles(catalog_roles: list[dict]) -> list[LaborRole]:
@@ -50,3 +50,27 @@ def parse_rate_text(text: str, roles: list[LaborRole]) -> list[dict]:
             continue
         result.append({"role_code": role.code, "role_name": role.name, "external_id": role.external_id, "sale_rate": sale, "cost_rate": cost, "confidence": 0.99, "source": line.strip(), "selected": True, "eligible_for_auto_apply": True})
     return result
+
+
+async def apply_rates_from_text(
+    session: AsyncSession, text: str, *, source_name: str
+) -> int:
+    """Apply only exact role-ID matches found in normal project input."""
+    roles = list((await session.scalars(select(LaborRole))).all())
+    items = parse_rate_text(text, roles)
+    if not items:
+        return 0
+    imported = RateImport(
+        filename=source_name[:512], status="applied", auto_apply=True,
+        extracted_items=items, applied_count=len(items),
+    )
+    session.add(imported)
+    await session.flush()
+    now = datetime.now(UTC)
+    for item in items:
+        session.add(RoleRate(
+            role_code=item["role_code"], sale_rate=item["sale_rate"],
+            cost_rate=item["cost_rate"], effective_from=now,
+            source_import_id=imported.id,
+        ))
+    return len(items)

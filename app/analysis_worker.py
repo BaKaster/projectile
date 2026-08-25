@@ -31,6 +31,7 @@ from app.recognition import (
     UnsupportedFormatError,
     metadata_as_table,
 )
+from app.rates import apply_rates_from_text
 from app.stage_contracts import StagePlanContext
 from app.stage_planner import StagePlanner
 from app.storage import LocalFileStorage
@@ -536,6 +537,10 @@ class AnalysisWorker:
             extraction.extracted_text = text
             extraction.tables = tables
             extraction.errors = error_rows
+            if status == "ready" and text:
+                await apply_rates_from_text(
+                    session, text, source_name=f"document:{document.original_filename}"
+                )
             return extraction
 
     async def _fail(self, run_id: uuid.UUID, error: Exception) -> None:
