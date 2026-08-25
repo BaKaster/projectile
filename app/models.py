@@ -254,3 +254,36 @@ class ProjectType(TimestampMixin, Base):
     attributes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     __table_args__ = (Index("ix_project_types_direction", "direction_code"),)
+
+
+class LaborRole(TimestampMixin, Base):
+    """Stable role identity; commercial values are versioned separately."""
+    __tablename__ = "labor_roles"
+
+    code: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    external_id: Mapped[int | None] = mapped_column(Integer, unique=True)
+
+
+class RoleRate(TimestampMixin, Base):
+    __tablename__ = "role_rates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    role_code: Mapped[str] = mapped_column(ForeignKey("labor_roles.code", ondelete="CASCADE"), nullable=False)
+    sale_rate: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost_rate: Mapped[int] = mapped_column(Integer, nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_import_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    __table_args__ = (CheckConstraint("sale_rate > 0 AND cost_rate > 0", name="ck_role_rates_positive"), Index("ix_role_rates_role_effective", "role_code", "effective_from"))
+
+
+class RateImport(TimestampMixin, Base):
+    __tablename__ = "rate_imports"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="review")
+    auto_apply: Mapped[bool] = mapped_column(nullable=False, default=False)
+    extracted_items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    applied_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    __table_args__ = (CheckConstraint("status IN ('review', 'applied')", name="ck_rate_imports_status"),)
