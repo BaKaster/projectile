@@ -232,7 +232,10 @@ async function openChat(id) {
     elements.title.textContent = chat.name;
     elements.subtitle.textContent = "История анализа проекта";
     elements.conversation.replaceChildren();
-    for (const message of chat.messages) renderUserMessage(message.content, [], message.created_at);
+    for (const message of chat.messages) {
+      if (message.role === "user") renderUserMessage(message.content, [], message.created_at);
+      else renderSystemMessage(message.content, message.created_at);
+    }
     if (chat.latest_analysis) {
       if (ACTIVE_STATUSES.has(chat.latest_analysis.status)) {
         renderThinking(chat.latest_analysis);
@@ -268,6 +271,13 @@ function renderUserMessage(content, files, createdAt = new Date()) {
     for (const file of files) { const chip = document.createElement("span"); chip.className = "file-chip"; chip.textContent = file.name; container.append(chip); }
     body.append(container);
   }
+}
+
+function renderSystemMessage(content, createdAt = new Date()) {
+  elements.empty.classList.add("hidden");
+  const body = messageShell("assistant", "Projectile", createdAt);
+  const text = document.createElement("div"); text.className = "message-text"; text.textContent = content;
+  body.append(text); scrollToBottom();
 }
 
 function renderThinking(run) {
@@ -557,7 +567,7 @@ async function submitMessage(event) {
       const accepted = await sendChatMessage(apiBase, state.chat.id, actualContent);
       if (!accepted.analysis) {
         if (accepted.rate_updates) {
-          showToast(`Обновлено ставок ролей: ${accepted.rate_updates}. Они будут учтены в следующем Excel-файле.`);
+          renderSystemMessage(`Обновлено ставок ролей: ${accepted.rate_updates}. Новые значения будут использованы в следующем Excel-файле.`);
         }
         await refreshCurrentChatIdentity(); await refreshHistory();
         return;
