@@ -142,6 +142,33 @@ def test_model_input_has_document_ids_and_is_bounded() -> None:
     assert 'role="customer_requirements"' in prompt
 
 
+def test_large_single_document_skips_redundant_digest_pass() -> None:
+    analyzer = CodexProjectAnalyzer("test-model", 10_100)
+    sources = [
+        SourceText(
+            document_id=str(uuid.uuid4()),
+            filename="brief.txt",
+            text="x" * 50_000,
+        )
+    ]
+
+    assert analyzer._should_digest_sources(100, sources) is False
+
+
+def test_large_document_set_still_uses_parallel_digest_pass() -> None:
+    analyzer = CodexProjectAnalyzer("test-model", 10_100)
+    sources = [
+        SourceText(
+            document_id=str(uuid.uuid4()),
+            filename=f"brief-{index}.txt",
+            text="x" * 3_000,
+        )
+        for index in range(5)
+    ]
+
+    assert analyzer._should_digest_sources(100, sources) is True
+
+
 def test_generated_excel_has_distinct_source_role() -> None:
     assert _source_role("generated/current-estimate.xlsx") == "generated_estimate"
 

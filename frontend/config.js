@@ -1,3 +1,3 @@
 window.PROJECTILE_CONFIG = {
-  apiBase: "http://localhost:8000",
+  apiBase: "https://projectile-api-production.up.railway.app",
 };

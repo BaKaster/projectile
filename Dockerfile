@@ -20,6 +20,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
         g++ \
+        gosu \
         libarchive-tools \
         libgl1 \
         libglib2.0-0 \
@@ -33,17 +34,16 @@ RUN apt-get update \
 COPY pyproject.toml README.md ./
 COPY app/__init__.py ./app/__init__.py
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install \
+RUN pip install \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cpu
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install ".[recognition]"
+RUN pip install ".[recognition]"
 
 # Application code changes no longer invalidate the heavyweight ML dependency layers.
 COPY app ./app
 COPY data ./data
+COPY scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 COPY ["Шаблон.xlsx", "/app/data/estimate-template.xlsx"]
 
 ENV HF_HOME=/home/appuser/.cache/huggingface
@@ -52,11 +52,10 @@ RUN rm -f /usr/local/bin/codex \
     && ln -s /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
     && useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/storage /home/appuser/.cache /home/appuser/.codex \
+    && chmod +x /app/scripts/docker-entrypoint.sh \
     && chown -R appuser:appuser /app \
     && chown -R appuser:appuser /home/appuser/.cache /home/appuser/.codex
 
-USER appuser
-
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/scripts/docker-entrypoint.sh"]

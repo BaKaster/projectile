@@ -183,3 +183,30 @@ class ProjectTypeResponse(BaseModel):
 
 class ProjectTypeUpdate(BaseModel):
     project_type_code: str = Field(min_length=1, max_length=100)
+
+
+class RateImportItem(BaseModel):
+    role_code: str | None = None
+    role_name: str
+    external_id: int | None = None
+    sale_rate: int = Field(gt=0)
+    cost_rate: int = Field(gt=0)
+    confidence: float = Field(ge=0, le=1)
+    source: str
+    selected: bool = True
+    eligible_for_auto_apply: bool = False
+
+
+class RateImportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    filename: str
+    status: str
+    auto_apply: bool
+    applied_count: int
+    extracted_items: list[RateImportItem]
+    created_at: datetime
+
+
+class RateImportApply(BaseModel):
+    items: list[RateImportItem] = Field(default_factory=list)

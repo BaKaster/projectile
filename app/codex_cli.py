@@ -162,12 +162,14 @@ class CodexCliClient:
         reasoning_effort: str = "medium",
         timeout_seconds: int = 300,
         auth_file: Path | None = None,
+        persist_auth_file: bool = False,
     ) -> None:
         self.executable = executable
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.timeout_seconds = timeout_seconds
         self.auth_file = auth_file
+        self.persist_auth_file = persist_auth_file
 
     async def parse[T: BaseModel](
         self,
@@ -232,6 +234,12 @@ class CodexCliClient:
         source = self.auth_file.expanduser()
         if not source.is_file():
             raise CodexCliError(f'Codex auth file not found at "{source}"')
+        if self.persist_auth_file:
+            if source.name != "auth.json":
+                raise CodexCliError(
+                    "Persistent Codex auth file must be named auth.json"
+                )
+            return source.parent.resolve()
         codex_home = runtime_root / "codex-home"
         codex_home.mkdir()
         target = codex_home / "auth.json"

@@ -46,7 +46,12 @@ from app.models import (
     ProjectAnalysis,
     ProjectDocument,
     ProjectType,
+    LaborRole,
+    RateImport,
+    RoleRate,
 )
+from app.rates import parse_rate_text
+from app.recognition import DocumentRecognizer
 from app.schemas import (
     AnalysisRunAccepted,
     AnalysisRunCreate,
@@ -69,6 +74,8 @@ from app.schemas import (
     StagePlanRequest,
     UploadedDocumentResponse,
     WorkPlanRequest,
+    RateImportApply,
+    RateImportResponse,
 )
 from app.stage_contracts import ProjectStagePlan, StagePlanContext
 from app.stage_planner import StagePlanningError
@@ -90,6 +97,58 @@ SwaggerUploadFile = Annotated[
 router = APIRouter()
 logger = logging.getLogger(__name__)
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.get("/api/v1/rate-imports", response_model=list[RateImportResponse], tags=["rates"])
+async def list_rate_imports(session: SessionDependency) -> list[RateImport]:
+    return list((await session.scalars(select(RateImport).order_by(RateImport.created_at.desc()))).all())
+
+
+@router.post("/api/v1/rate-imports", response_model=RateImportResponse, status_code=201, tags=["rates"])
+async def create_rate_import(
+    request: Request,
+    session: SessionDependency,
+    file: SwaggerUploadFile = File(...),
+    auto_apply: bool = Form(False),
+) -> RateImport:
+    settings = request.app.state.settings
+    storage = LocalFileStorage(settings.storage_root, settings.max_upload_size_bytes, settings.upload_chunk_size_bytes)
+    staged = await storage.stage(file)
+    try:
+        recognizer = DocumentRecognizer(whisper_model=settings.recognition_model, whisper_device=settings.recognition_device, whisper_compute_type=settings.recognition_compute_type, archive_max_files=settings.archive_max_files, archive_max_uncompressed_bytes=settings.archive_max_uncompressed_bytes)
+        recognized = await recognizer.recognize(staged.temp_path)
+        roles = list((await session.scalars(select(LaborRole))).all())
+        items = parse_rate_text(recognized.text, roles)
+    finally:
+        storage.discard(staged)
+    item = RateImport(filename=staged.original_filename, auto_apply=auto_apply, extracted_items=items)
+    session.add(item)
+    await session.flush()
+    if auto_apply:
+        eligible = [value for value in items if value["eligible_for_auto_apply"] and value["confidence"] >= 0.95]
+        for value in eligible:
+            session.add(RoleRate(role_code=value["role_code"], sale_rate=value["sale_rate"], cost_rate=value["cost_rate"], effective_from=datetime.now(UTC), source_import_id=item.id))
+        item.applied_count = len(eligible)
+        item.status = "applied" if eligible else "review"
+    await session.commit()
+    await session.refresh(item)
+    return item
+
+
+@router.post("/api/v1/rate-imports/{import_id}/apply", response_model=RateImportResponse, tags=["rates"])
+async def apply_rate_import(import_id: uuid.UUID, payload: RateImportApply, session: SessionDependency) -> RateImport:
+    item = await session.get(RateImport, import_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Rate import not found")
+    selected = [entry.model_dump() for entry in payload.items if entry.selected and entry.role_code]
+    for value in selected:
+        session.add(RoleRate(role_code=value["role_code"], sale_rate=value["sale_rate"], cost_rate=value["cost_rate"], effective_from=datetime.now(UTC), source_import_id=item.id))
+    item.extracted_items = [entry.model_dump() for entry in payload.items]
+    item.applied_count = len(selected)
+    item.status = "applied"
+    await session.commit()
+    await session.refresh(item)
+    return item
 
 
 @router.get(
@@ -160,6 +219,7 @@ async def build_project_work_plan(
                     codex_cli=settings.codex_cli,
                     codex_timeout_seconds=settings.codex_timeout_seconds,
                     codex_auth_file=settings.codex_auth_file,
+                    codex_persist_auth_file=settings.codex_persist_auth_file,
                 )
             except Exception as error:  # noqa: BLE001 - return a useful deterministic plan
                 logger.warning(

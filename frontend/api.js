@@ -195,3 +195,11 @@ export function getAnalysisRun(apiBase, projectId, runId, signal) {
 export function getLatestAnalysis(apiBase, projectId, signal) {
   return request(apiBase, `/api/v1/projects/${projectId}/analyses/latest`, { signal });
 }
+
+export function uploadRateImport(apiBase, file, autoApply) {
+  const form = new FormData(); form.append("file", file); form.append("auto_apply", String(Boolean(autoApply)));
+  return request(apiBase, "/api/v1/rate-imports", { method: "POST", body: form });
+}
+export function applyRateImport(apiBase, importId, items) {
+  return request(apiBase, `/api/v1/rate-imports/${importId}/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
+}

@@ -108,6 +108,34 @@ def test_codex_child_environment_excludes_application_secrets(
     assert "OPENAI_API_KEY" not in environment
 
 
+def test_persistent_auth_uses_source_codex_home(
+    tmp_path: Path,
+) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text('{"tokens":{}}', encoding="utf-8")
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+
+    client = CodexCliClient(
+        model="test-model", auth_file=auth_file, persist_auth_file=True
+    )
+    codex_home = client._prepare_codex_home(runtime_root)
+    assert codex_home == tmp_path.resolve()
+
+
+def test_ephemeral_auth_still_copies_source_file(tmp_path: Path) -> None:
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text('{"tokens":{}}', encoding="utf-8")
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+
+    client = CodexCliClient(model="test-model", auth_file=auth_file)
+    codex_home = client._prepare_codex_home(runtime_root)
+    assert codex_home is not None
+    assert codex_home != tmp_path
+    assert (codex_home / "auth.json").read_text(encoding="utf-8") == '{"tokens":{}}'
+
+
 def test_codex_cli_available_checks_login_without_auth_file(
     monkeypatch, tmp_path: Path
 ) -> None:

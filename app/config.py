@@ -35,7 +35,8 @@ class Settings(BaseSettings):
     codex_cli: str = "codex"
     codex_timeout_seconds: int = Field(default=300, gt=0, le=1800)
     codex_auth_file: Path | None = None
-    analysis_model: str = "gpt-5.4"
+    codex_persist_auth_file: bool = False
+    analysis_model: str = "gpt-5.6-luna"
     analysis_reasoning_effort: str = "medium"
     analysis_ai_direct_estimation: bool = True
     analysis_ai_effort_refinement: bool = True

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import json
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +14,7 @@ from app.database import create_database, ensure_schema_compatibility
 from app.effort_estimator import AdaptiveEffortEstimator
 from app.excel_estimate import ExcelEstimateService
 from app.models import Base
+from app.rates import current_rates, ensure_rate_catalog
 from app.stage_planner import StagePlanner
 from app.work_generator import WorkGenerator
 
@@ -52,6 +54,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
             await ensure_schema_compatibility(engine)
+        catalog_data = json.loads(resolved_settings.role_effort_catalog_path.read_text(encoding="utf-8"))
+        async with session_factory() as session:
+            await ensure_rate_catalog(session, catalog_data["roles"])
+            for code, (sale_rate, cost_rate) in (await current_rates(session)).items():
+                if role := effort_estimator.roles.get(code):
+                    role.sale_rate = sale_rate
+                    role.cost_rate = cost_rate
         await seed_project_types(
             session_factory, resolved_settings.project_types_path.resolve()
         )
