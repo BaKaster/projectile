@@ -14,8 +14,6 @@ import {
   updateAnalysisProjectType,
   updateChat,
   uploadDocuments,
-  uploadRateImport,
-  applyRateImport,
 } from "./api.js";
 import { ACTIVE_STATUSES, pollAnalysis, SUCCESS_STATUSES } from "./polling.js";
 
@@ -32,7 +30,6 @@ const elements = {
   attach: $("#attach-button"), fileInput: $("#file-input"), pendingFiles: $("#pending-files"),
   toast: $("#toast"), excelLoading: $("#excel-loading"),
   themeToggle: $("#theme-toggle"), themeLabel: $("#theme-label"), dropOverlay: $("#drop-overlay"),
-  ratesButton: $("#rates-button"), ratesModal: $("#rates-modal"), ratesClose: $("#rates-close"), ratesFile: $("#rates-file"), ratesAuto: $("#rates-auto"), ratesUpload: $("#rates-upload"), ratesResults: $("#rates-results"),
 };
 
 let dragDepth = 0;
@@ -88,18 +85,6 @@ function setBusy(value) {
   elements.attach.disabled = value;
 }
 
-function openRates() { elements.ratesModal.classList.remove("hidden"); elements.ratesFile.focus(); }
-function closeRates() { elements.ratesModal.classList.add("hidden"); }
-function renderRateImport(result) {
-  elements.ratesResults.replaceChildren();
-  const info = document.createElement("p");
-  info.textContent = result.applied_count ? `Автоматически обновлено: ${result.applied_count}` : `Распознано строк: ${result.extracted_items.length}. Выберите и подтвердите изменения.`;
-  elements.ratesResults.append(info);
-  const list = document.createElement("div"); list.className = "rates-list";
-  result.extracted_items.forEach((item, index) => { const row = document.createElement("label"); row.className = "rates-row"; const box = document.createElement("input"); box.type = "checkbox"; box.checked = item.selected; box.dataset.index = String(index); row.append(box, document.createTextNode(`${item.role_name}: ${item.sale_rate.toLocaleString("ru-RU")} ₽/ч, себестоимость ${item.cost_rate.toLocaleString("ru-RU")} ₽/ч`)); list.append(row); });
-  elements.ratesResults.append(list);
-  if (result.status !== "applied" && result.extracted_items.length) { const apply = document.createElement("button"); apply.type = "button"; apply.className = "rates-upload"; apply.textContent = "Подтвердить выбранные ставки"; apply.addEventListener("click", async () => { const items = result.extracted_items.map((item, index) => ({ ...item, selected: list.querySelector(`[data-index=\"${index}\"]`).checked })); try { renderRateImport(await applyRateImport(apiBase, result.id, items)); showToast("Ставки обновлены. История сохранена."); } catch (error) { showToast(formatApiError(error)); } }); elements.ratesResults.append(apply); }
-}
 
 function setExcelLoading(value) {
   elements.excelLoading.classList.toggle("hidden", !value);
@@ -616,17 +601,6 @@ elements.themeToggle.addEventListener("click", () => {
   localStorage.setItem("projectile-theme", theme); setTheme(theme);
 });
 elements.newChat.addEventListener("click", newChat);
-elements.ratesButton.addEventListener("click", openRates);
-elements.ratesClose.addEventListener("click", closeRates);
-elements.ratesModal.addEventListener("click", (event) => { if (event.target === elements.ratesModal) closeRates(); });
-elements.ratesUpload.addEventListener("click", async () => {
-  const file = elements.ratesFile.files[0];
-  if (!file) { showToast("Выберите файл со ставками."); return; }
-  elements.ratesUpload.disabled = true;
-  try { renderRateImport(await uploadRateImport(apiBase, file, elements.ratesAuto.checked)); }
-  catch (error) { showToast(formatApiError(error)); }
-  finally { elements.ratesUpload.disabled = false; }
-});
 elements.openSidebar.addEventListener("click", () => { elements.sidebar.classList.add("open"); elements.overlay.classList.add("open"); });
 elements.closeSidebar.addEventListener("click", closeSidebar); elements.overlay.addEventListener("click", closeSidebar);
 window.addEventListener("beforeunload", () => state.pollController?.abort());
