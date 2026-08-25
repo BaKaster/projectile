@@ -52,6 +52,29 @@ def parse_rate_text(text: str, roles: list[LaborRole]) -> list[dict]:
     return result
 
 
+def split_rate_update_text(text: str, items: list[dict]) -> str:
+    """Return the part of a chat message that is not a recognised rate row."""
+    rate_lines = {str(item["source"]).strip() for item in items}
+    return "\n".join(
+        line for line in text.splitlines() if line.strip() not in rate_lines
+    ).strip()
+
+
+def project_input_error(text: str) -> str | None:
+    """Reject obvious non-descriptions before wasting an analysis run on them."""
+    normalized = re.sub(r"\s+", " ", text).strip()
+    words = re.findall(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё0-9_-]*", normalized)
+    letters = re.sub(r"[^A-Za-zА-Яа-яЁё]", "", normalized)
+    if len(normalized) < 12 or len(words) < 3 or len(letters) < 8:
+        return (
+            "Недостаточно данных для анализа. Опишите проект хотя бы одним "
+            "предложением: цель, систему или услугу, объём и ожидаемый результат."
+        )
+    if len(set(letters.casefold())) <= 2:
+        return "Похоже на случайный текст. Опишите проект или приложите документ."
+    return None
+
+
 async def apply_rates_from_text(
     session: AsyncSession, text: str, *, source_name: str
 ) -> int:

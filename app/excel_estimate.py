@@ -145,6 +145,9 @@ class ExcelEstimateRequest(_ExcelInputModel):
     work_items: list[ExcelWorkItem] = Field(min_length=1, max_length=100)
     external_costs: list[ExcelExternalCost] = Field(default_factory=list, max_length=20)
     assumptions: list[ExcelAssumption] = Field(default_factory=list, max_length=4)
+    # Internal role code -> (sale rate, cost rate).  This is written into the
+    # visible role directory as well as applied to calculation rows.
+    role_rate_overrides: dict[str, tuple[float, float]] = Field(default_factory=dict)
 
 
 class TypeParameterDefinition(BaseModel):
@@ -245,6 +248,7 @@ class ExcelEstimateService:
         }
         self._parameters = self._load_parameters(package)
         self._roles = self._load_roles(package)
+        self._role_rate_cells = self._load_role_rate_cells(package)
         self._general_input_cells = self._load_general_input_cells(package)
         self._normalize_removed_confidence_check(package)
         self._parameter_input_cells = self._load_parameter_input_cells(package)
@@ -398,6 +402,21 @@ class ExcelEstimateService:
                 continue
             roles.append(_RoleDefinition(str(row[0]), str(row[2])))
         return roles
+
+    @staticmethod
+    def _load_role_rate_cells(
+        package: _WorkbookPackage,
+    ) -> dict[str, tuple[str, str, str]]:
+        """Find sale/cost/source cells in the template role directory by role ID."""
+        result: dict[str, tuple[str, str, str]] = {}
+        for row_number, row in enumerate(
+            package.read_rows("Справочник ролей", 2, 200, 1, 6), 2
+        ):
+            if row[0] not in (None, ""):
+                result[str(row[0]).strip()] = (
+                    f"D{row_number}", f"E{row_number}", f"F{row_number}"
+                )
+        return result
 
     @staticmethod
     def _load_internal_role_codes(role_catalog_path: Path | None) -> dict[str, str]:
@@ -633,6 +652,23 @@ class ExcelEstimateService:
         )
         package.clear("Расчёт", ["A6:J105", "U6:V105"])
         package.clear("Внешние затраты", ["A6:G25", "K6:K25"])
+
+        role_cells: dict[str, Any] = {}
+        for internal_code, (sale_rate, cost_rate) in payload.role_rate_overrides.items():
+            external_code = self._internal_role_codes.get(internal_code, internal_code)
+            cells = self._role_rate_cells.get(str(external_code).lstrip("#"))
+            if cells is None:
+                continue
+            sale_cell, cost_cell, source_cell = cells
+            role_cells.update(
+                {
+                    sale_cell: sale_rate,
+                    cost_cell: cost_rate,
+                    source_cell: "Актуальная ставка проекта",
+                }
+            )
+        if role_cells:
+            package.write_cells("Справочник ролей", role_cells)
 
         general_values = {
             "project_name": payload.project_name,

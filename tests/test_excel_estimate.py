@@ -218,6 +218,24 @@ def test_dynamic_parameters_are_resolved_by_template_metadata(
     assert values["RISK_PCT"] == 0.1
 
 
+def test_current_role_rates_are_written_to_visible_role_directory(
+    service: ExcelEstimateService,
+) -> None:
+    output = service.build(
+        _payload(role_rate_overrides={"devops_l3": (4500, 2900)})
+    )
+    package = _WorkbookPackage(output)
+
+    assert package.read_rows("Справочник ролей", 16, 16, 1, 6)[0] == [
+        "1202",
+        "DIT",
+        "L3 DevOps-инженер | #1202",
+        4500,
+        2900,
+        "Актуальная ставка проекта",
+    ]
+
+
 def test_input_binding_follows_template_labels_instead_of_fixed_rows() -> None:
     legacy = ExcelEstimateService(LEGACY_TEMPLATE, role_catalog_path=ROLE_CATALOG)
     current = ExcelEstimateService(TEMPLATE, role_catalog_path=ROLE_CATALOG)

@@ -142,7 +142,8 @@ class ChatMessageResponse(BaseModel):
 
 class ChatMessageAccepted(BaseModel):
     message: ChatMessageResponse
-    analysis: AnalysisRunAccepted
+    analysis: AnalysisRunAccepted | None = None
+    rate_updates: int = Field(default=0, ge=0)
 
 
 class QuestionAnswerResolved(BaseModel):

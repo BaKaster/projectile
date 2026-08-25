@@ -555,6 +555,13 @@ async function submitMessage(event) {
       await generateExcel(resolved.analysis);
     } else {
       const accepted = await sendChatMessage(apiBase, state.chat.id, actualContent);
+      if (!accepted.analysis) {
+        if (accepted.rate_updates) {
+          showToast(`Обновлено ставок ролей: ${accepted.rate_updates}. Они будут учтены в следующем Excel-файле.`);
+        }
+        await refreshCurrentChatIdentity(); await refreshHistory();
+        return;
+      }
       state.run = accepted.analysis; renderThinking(accepted.analysis); refreshHistory();
       await beginPolling(accepted.analysis.run_id);
     }

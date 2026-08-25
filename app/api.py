@@ -50,7 +50,12 @@ from app.models import (
     RateImport,
     RoleRate,
 )
-from app.rates import apply_rates_from_text, parse_rate_text
+from app.rates import (
+    apply_rates_from_text,
+    parse_rate_text,
+    project_input_error,
+    split_rate_update_text,
+)
 from app.recognition import DocumentRecognizer
 from app.schemas import (
     AnalysisRunAccepted,
@@ -555,18 +560,38 @@ async def send_chat_message(
     project = await session.get(Project, chat_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Chat not found")
+    roles = list((await session.scalars(select(LaborRole))).all())
+    rate_items = parse_rate_text(payload.content, roles)
+    project_text = split_rate_update_text(payload.content, rate_items)
+    if project_text:
+        if error := project_input_error(project_text):
+            raise HTTPException(status_code=422, detail=error)
     message = await _append_chat_message(
         session, project, payload.content, kind="query"
     )
-    await apply_rates_from_text(
+    rate_updates = await apply_rates_from_text(
         session, payload.content, source_name=f"chat:{project.id}"
     )
+    if rate_updates and not project_text:
+        await _append_chat_message(
+            session,
+            project,
+            f"Обновлено ставок ролей: {rate_updates}. Новые ставки будут использованы в следующем Excel-файле.",
+            kind="system",
+        )
+        await session.commit()
+        await session.refresh(message)
+        return ChatMessageAccepted(
+            message=ChatMessageResponse.model_validate(message),
+            rate_updates=rate_updates,
+        )
     run = await _queue_project_analysis(session, project.id)
     await session.commit()
     await session.refresh(message)
     return ChatMessageAccepted(
         message=ChatMessageResponse.model_validate(message),
         analysis=_analysis_accepted(run),
+        rate_updates=rate_updates,
     )
 
 
@@ -1741,6 +1766,9 @@ async def _apply_current_rate_overrides(
             if rate := rates.get(assignment.role):
                 assignment.sale_rate_override = rate.sale_rate
                 assignment.cost_rate_override = rate.cost_rate
+    payload.role_rate_overrides = {
+        code: (rate.sale_rate, rate.cost_rate) for code, rate in rates.items()
+    }
 
 
 @router.get(
