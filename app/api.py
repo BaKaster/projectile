@@ -293,6 +293,8 @@ async def build_estimate_workbook(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
         headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
             "Content-Disposition": (
                 f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
             ),
@@ -1515,6 +1517,40 @@ def _analysis_estimate_payload(
             sorted(stages.values(), key=lambda value: value.get("order", 999)), 1
         )
     }
+    stage_explanations = []
+    for stage in sorted(stages.values(), key=lambda value: value.get("order", 999)):
+        stage_no = stage_numbers[stage["code"]]
+        explanation_parts: list[str] = []
+        if stage.get("objective"):
+            objective = _clean_explanation_fragment(stage["objective"])
+            explanation_parts.append(
+                f"Этап включён, чтобы {_lower_initial(objective)}."
+            )
+        if stage.get("selection_reason"):
+            reason = _clean_explanation_fragment(stage["selection_reason"])
+            explanation_parts.append(
+                f"Он необходим, потому что {_lower_initial(reason)}."
+            )
+        deliverables = [
+            _clean_explanation_fragment(item)
+            for item in stage.get("deliverables", [])
+            if item
+        ]
+        if deliverables:
+            explanation_parts.append(
+                "По итогам заказчик получает: " + "; ".join(deliverables) + "."
+            )
+        if not explanation_parts:
+            explanation_parts.append(
+                f"Этап нужен для выполнения и приёмки работ «{stage.get('name') or stage['code']}»."
+            )
+        stage_explanations.append(
+            {
+                "stage_no": stage_no,
+                "explanation": " ".join(explanation_parts)[:700],
+            }
+        )
+
     work_items = []
     for package in work_plan.get("packages", []):
         if not isinstance(package, dict):
@@ -1531,6 +1567,7 @@ def _analysis_estimate_payload(
                     "role": assignment.get("role_code"),
                     "estimated_hours": assignment.get("effort_hours"),
                     "responsibility": assignment.get("responsibility"),
+                    "hours_rationale": _hours_rationale(work, assignment),
                 }
                 for assignment in work.get("role_assignments", [])
                 if isinstance(assignment, dict)
@@ -1542,10 +1579,22 @@ def _analysis_estimate_payload(
                     {
                         "role": work["role_code"],
                         "estimated_hours": work["effort_hours"],
+                        "hours_rationale": _hours_rationale(work),
                     }
                 ]
             if not assignments:
-                assignments = [{"role": "project_manager", "estimated_hours": 8}]
+                assignments = [
+                    {
+                        "role": "project_manager",
+                        "estimated_hours": 8,
+                        "hours_rationale": (
+                            "На предварительный анализ и формирование оценки заложено 8 ч. "
+                            "В это время входит изучение исходных данных, уточнение границ работ "
+                            "и подготовка предварительной оценки. Поскольку исходные сведения "
+                            "пока недостаточно детализированы, значение принято как экспертный резерв."
+                        ),
+                    }
+                ]
             comment_parts = [work.get("selection_reason")]
             comment_parts.extend(work.get("assumptions") or [])
             work_items.append(
@@ -1574,15 +1623,17 @@ def _analysis_estimate_payload(
             "comment": "Резервный состав работ: исходные данные не позволили разложить проект детальнее.",
         }]
 
-    # The workbook has exactly 100 calculation rows.  Do not expose that
+    # The workbook has a fixed number of calculation rows.  Do not expose that
     # implementation limit to the customer: retain total hours and fold the
     # smallest auxiliary assignments into the primary role of the same work.
     # The resulting loss of role granularity is explicitly disclosed as a risk.
     compacted_assignments = 0
+    row_capacity = estimate_service.work_row_capacity if estimate_service else 50
+
     def expanded_row_count() -> int:
         return sum(len(item["role_assignments"]) for item in work_items)
 
-    while expanded_row_count() > 100:
+    while expanded_row_count() > row_capacity:
         candidates = [
             (assignment["estimated_hours"], work_index, assignment_index)
             for work_index, item in enumerate(work_items)
@@ -1596,18 +1647,18 @@ def _analysis_estimate_payload(
         removed = assignments.pop(assignment_index)
         target = max(assignments, key=lambda item: item["estimated_hours"])
         target["estimated_hours"] += removed["estimated_hours"]
-        work_items[work_index]["comment"] = (
-            (work_items[work_index].get("comment") or "")
-            + f"; Трудозатраты роли {removed['role']} объединены с {target['role']} "
-            "из-за лимита строк Excel."
-        )[:2000]
+        target["hours_rationale"] = _explain_compacted_hours(
+            target.get("hours_rationale"),
+            target["estimated_hours"],
+            removed["estimated_hours"],
+        )
         compacted_assignments += 1
 
-    if expanded_row_count() > 100:
-        # This only applies to exceptional plans with more than 100 independent
-        # works.  Preserve the total in the same stage rather than failing the
+    if expanded_row_count() > row_capacity:
+        # This only applies to exceptional plans with more independent works
+        # than the current template can display. Preserve the total in the
         # report download.
-        while expanded_row_count() > 100 and len(work_items) > 1:
+        while expanded_row_count() > row_capacity and len(work_items) > 1:
             source_index = min(
                 range(len(work_items)),
                 key=lambda index: sum(
@@ -1666,9 +1717,9 @@ def _analysis_estimate_payload(
     if compacted_assignments:
         assumptions.insert(0, {
             "type": "Риск",
-            "text": "Детализация ролей укрупнена для совместимости с лимитом строк Excel.",
+            "text": "Часть участия вспомогательных специалистов объединена с основной ролью в строках расчёта.",
             "source": None,
-            "impact": "Общая трудоёмкость сохранена; распределение часов по вспомогательным ролям отражено в комментариях к работам.",
+            "impact": "Общая трудоёмкость сохранена; объединённые часы указаны в пояснениях к соответствующим работам.",
         })
     if result.project_type_code is None:
         assumptions.insert(0, {
@@ -1743,6 +1794,7 @@ def _analysis_estimate_payload(
                 "commercial_reserve_rate": 0,
                 "type_parameters": type_parameters,
                 "work_items": work_items,
+                "stage_explanations": stage_explanations,
                 "external_costs": result.raw_result.get("external_costs", []),
                 "assumptions": assumptions[:4],
             }
@@ -1769,6 +1821,181 @@ async def _apply_current_rate_overrides(
     payload.role_rate_overrides = {
         code: (rate.sale_rate, rate.cost_rate) for code, rate in rates.items()
     }
+
+
+def _hours_rationale(
+    work: dict,
+    assignment: dict | None = None,
+) -> str | None:
+    assignment = assignment or {}
+    assigned_hours = assignment.get("effort_hours", work.get("effort_hours"))
+    if not isinstance(assigned_hours, (int, float)):
+        return None
+
+    work_name = _clean_explanation_fragment(
+        work.get("name") or work.get("work_code") or "выполнение работы"
+    )
+    rendered_hours = _format_hours(assigned_hours)
+    responsibility = _clean_explanation_fragment(
+        assignment.get("responsibility") or ""
+    )
+    assignment_rationale = _clean_explanation_fragment(
+        assignment.get("rationale") or ""
+    )
+    is_review = any(
+        marker in f"{responsibility} {assignment_rationale}".casefold()
+        for marker in ("провер", "согласован", "эксперт", "контрол")
+    )
+
+    if is_review:
+        sentences = [
+            f"На экспертную проверку и согласование результата работы «{work_name}» "
+            f"заложено {rendered_hours} ч."
+        ]
+    else:
+        sentences = [
+            f"На выполнение работы «{work_name}» заложено {rendered_hours} ч."
+        ]
+        if responsibility and responsibility.casefold() not in {
+            "выполнение основной части работы",
+            "основное выполнение",
+        }:
+            sentences.append(
+                f"В это время входит {_lower_initial(responsibility)}."
+            )
+
+    minimum = work.get("effort_min_hours")
+    maximum = work.get("effort_max_hours")
+    if (
+        not is_review
+        and isinstance(minimum, (int, float))
+        and isinstance(maximum, (int, float))
+    ):
+        sentences.append(
+            "Ориентир для работ такого объёма — "
+            f"{_format_hours(minimum)}–{_format_hours(maximum)} ч; "
+            f"в смету включено наиболее вероятное значение {rendered_hours} ч."
+        )
+
+    drivers = [
+        _humanize_driver(item)
+        for item in work.get("estimation_drivers", [])
+        if item
+    ]
+    if drivers:
+        sentences.append(
+            "Оценка учитывает " + ", ".join(drivers[:3]) + "."
+        )
+
+    facts = _select_explanation_facts(work.get("context_facts", []))
+    if facts:
+        sentences.append("Также учтено, что " + "; ".join(facts) + ".")
+
+    return _truncate_explanation(" ".join(sentences), 520)
+
+
+def _clean_explanation_fragment(value: object) -> str:
+    rendered = re.sub(r"\s+", " ", str(value or "")).strip()
+    rendered = re.sub(r"\bscope\b", "объём работ", rendered, flags=re.IGNORECASE)
+    return rendered.rstrip(" .;:")
+
+
+def _lower_initial(value: str) -> str:
+    if not value or value[:2].isupper():
+        return value
+    return value[0].lower() + value[1:]
+
+
+def _format_hours(value: float | int) -> str:
+    return f"{value:g}".replace(".", ",")
+
+
+def _truncate_explanation(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    candidate = value[: limit - 1]
+    sentence_end = max(candidate.rfind(". "), candidate.rfind("; "))
+    if sentence_end >= limit // 2:
+        shortened = candidate[: sentence_end + 1].rstrip(" ,;:.")
+    else:
+        shortened = candidate.rsplit(" ", 1)[0].rstrip(" ,;:.")
+    return shortened + "."
+
+
+_DRIVER_LABELS = {
+    "цели": "согласование целей и критериев результата",
+    "стейкхолдеры": "взаимодействие с заинтересованными сторонами",
+    "потоки": "количество и взаимосвязь рабочих потоков",
+    "системы": "число затрагиваемых систем",
+    "подрядчики": "координацию внешних исполнителей",
+    "зависимости": "межсистемные и организационные зависимости",
+    "вехи": "контрольные точки проекта",
+    "требования": "объём и детализацию требований",
+    "сценарии": "количество рабочих сценариев",
+    "интеграции": "интеграционные связи",
+    "риски": "выявленные проектные риски",
+    "sla": "целевые показатели SLA",
+    "обращения": "ожидаемый поток обращений",
+    "режим": "режим оказания поддержки",
+}
+
+
+def _humanize_driver(value: object) -> str:
+    cleaned = _clean_explanation_fragment(value)
+    return _DRIVER_LABELS.get(cleaned.casefold(), cleaned.casefold())
+
+
+def _select_explanation_facts(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    ranked: list[tuple[int, int, str]] = []
+    priority_markers = (
+        "предмет работ",
+        "объём",
+        "колич",
+        "срок",
+        "sla",
+        "канал",
+        "состояние решения",
+        "пользовател",
+        "обращен",
+        "платформ",
+    )
+    for index, item in enumerate(values):
+        cleaned = _clean_explanation_fragment(item)
+        if not cleaned:
+            continue
+        lowered = cleaned.casefold()
+        rank = next(
+            (position for position, marker in enumerate(priority_markers) if marker in lowered),
+            len(priority_markers),
+        )
+        if ":" in cleaned:
+            label, value = cleaned.split(":", 1)
+            cleaned = f"{_lower_initial(label.strip())} — {_lower_initial(value.strip())}"
+        ranked.append((rank, index, _truncate_explanation(cleaned, 170).rstrip(".")))
+    return [item[2] for item in sorted(ranked)[:2]]
+
+
+def _explain_compacted_hours(
+    rationale: str | None,
+    total_hours: float,
+    included_hours: float,
+) -> str:
+    base = rationale or f"На выполнение работы заложено {_format_hours(total_hours)} ч."
+    updated = re.sub(
+        r"заложено\s+\d+(?:[.,]\d+)?\s*ч",
+        f"заложено {_format_hours(total_hours)} ч",
+        base,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    disclosure = (
+        f" В эту сумму включено {_format_hours(included_hours)} ч участия смежного "
+        "специалиста для проверки и согласования результата."
+    )
+    shortened_base = _truncate_explanation(updated.rstrip(), 600 - len(disclosure))
+    return shortened_base + disclosure
 
 
 @router.get(
@@ -1889,6 +2116,8 @@ async def download_analysis_xlsx(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
         headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
             "Content-Disposition": (
                 f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
             ),

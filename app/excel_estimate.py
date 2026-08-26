@@ -7,6 +7,7 @@ import re
 import subprocess
 import tempfile
 import zipfile
+from copy import deepcopy
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -70,6 +71,12 @@ class ExcelRoleAssignment(_ExcelInputModel):
     sale_rate_override: float | None = Field(default=None, ge=0)
     cost_rate_override: float | None = Field(default=None, ge=0)
     responsibility: str | None = Field(default=None, max_length=1000)
+    hours_rationale: str | None = Field(default=None, max_length=2000)
+
+
+class ExcelStageExplanation(_ExcelInputModel):
+    stage_no: int = Field(ge=1, le=20)
+    explanation: str = Field(min_length=1, max_length=2000)
 
 
 class ExcelWorkItem(_ExcelInputModel):
@@ -143,6 +150,9 @@ class ExcelEstimateRequest(_ExcelInputModel):
         default_factory=list, max_length=8
     )
     work_items: list[ExcelWorkItem] = Field(min_length=1, max_length=100)
+    stage_explanations: list[ExcelStageExplanation] = Field(
+        default_factory=list, max_length=20
+    )
     external_costs: list[ExcelExternalCost] = Field(default_factory=list, max_length=20)
     assumptions: list[ExcelAssumption] = Field(default_factory=list, max_length=4)
     # Internal role code -> (sale rate, cost rate).  This is written into the
@@ -198,6 +208,7 @@ class ExcelEstimateService:
         "Параметры типов",
         "Справочник ролей",
         "Проверки",
+        "Технические данные",
     }
     GENERAL_INPUT_LABELS: ClassVar[dict[str, str]] = {
         "project_name": "Название проекта",
@@ -214,12 +225,34 @@ class ExcelEstimateService:
         "main_assumption": "Главное допущение",
         "commercial_reserve_rate": "БФ / коммерческий резерв",
     }
+    ARCHIVED_INPUT_LABELS: ClassVar[dict[str, str]] = {
+        "estimate_mode": "Режим оценки",
+        "confidence": "Уверенность оценки",
+        "planned_start_date": "Плановая дата старта",
+        "source_or_spec_version": "Источник / версия ТЗ",
+        "commercial_reserve_rate": "Коммерческий резерв (исключён из цены)",
+    }
     ASSUMPTION_COLUMN_LABELS: ClassVar[dict[str, tuple[int, str]]] = {
         "type": (1, "Тип"),
         "text": (2, "Формулировка"),
         "source": (3, "Источник / основание"),
         "impact": (4, "Влияние на оценку"),
     }
+    WORK_COLUMN_LABELS: ClassVar[dict[str, str]] = {
+        "stage_no": "№ этапа",
+        "stage_name": "Этап",
+        "work_no": "№ работы",
+        "work_name": "Работа",
+        "role": "Роль",
+        "estimated_hours": "Часы ИИ",
+        "comment": "Комментарий к часам (ИИ)",
+        "hours_basis": "База часов",
+        "quantity_override": "Кол-во (override)",
+        "sale_rate_override": "Ставка продажи (override)",
+        "cost_rate_override": "Себестоимость (override)",
+        "site_or_contour": "Площадка / контур",
+    }
+    STAGE_EXPLANATION_LABEL: ClassVar[str] = "Объяснение этапа"
 
     def __init__(
         self,
@@ -250,18 +283,109 @@ class ExcelEstimateService:
         self._roles = self._load_roles(package)
         self._role_rate_cells = self._load_role_rate_cells(package)
         self._general_input_cells = self._load_general_input_cells(package)
+        self._archived_input_cells = self._load_archived_input_cells(package)
         self._normalize_removed_confidence_check(package)
         self._parameter_input_cells = self._load_parameter_input_cells(package)
         (
             self._assumption_input_cells,
             self._assumption_clear_range,
         ) = self._load_assumption_input_cells(package)
+        self._work_input_columns = self._load_work_input_columns(package)
+        self._work_first_row = 6
+        self._work_last_row = self._load_work_last_row(package)
+        self._stage_explanation_cells = self._load_stage_explanation_cells(package)
         self._internal_role_codes = self._load_internal_role_codes(role_catalog_path)
         self._validate_template_compatibility(package)
         self._template = package.to_bytes()
         self._template_formula_fingerprint = package.formula_fingerprint()
         self._recalculation_command = recalculation_command
         self._recalculation_timeout_seconds = recalculation_timeout_seconds
+
+    @property
+    def work_row_capacity(self) -> int:
+        return self._work_last_row - self._work_first_row + 1
+
+    @classmethod
+    def _load_work_input_columns(cls, package: _WorkbookPackage) -> dict[str, str]:
+        headers = package.read_rows("Расчёт", 5, 5, 1, 30)[0]
+        by_label = {
+            str(value).strip(): _column_name(index)
+            for index, value in enumerate(headers, 1)
+            if value not in (None, "")
+        }
+        missing = [
+            label for label in cls.WORK_COLUMN_LABELS.values() if label not in by_label
+        ]
+        if missing:
+            raise ExcelEstimateError(
+                "Excel template is missing calculation input columns: "
+                + ", ".join(sorted(missing))
+            )
+        return {
+            field: by_label[label] for field, label in cls.WORK_COLUMN_LABELS.items()
+        }
+
+    @staticmethod
+    def _load_work_last_row(package: _WorkbookPackage) -> int:
+        headers = package.read_rows("Расчёт", 5, 5, 1, 30)[0]
+        control_column = next(
+            (
+                index
+                for index, value in enumerate(headers, 1)
+                if value not in (None, "") and str(value).strip() == "Контроль"
+            ),
+            None,
+        )
+        if control_column is None:
+            raise ExcelEstimateError(
+                "Excel template is missing the calculation control column"
+            )
+        formula_rows = [
+            _split_cell(cell)[1]
+            for sheet, cell, _formula in package.formula_fingerprint()
+            if sheet == "Расчёт"
+            and _split_cell(cell)[0] == control_column
+            and _split_cell(cell)[1] >= 6
+        ]
+        if not formula_rows:
+            raise ExcelEstimateError(
+                "Excel template has no calculation formulas below the input header"
+            )
+        return max(formula_rows)
+
+    @classmethod
+    def _load_stage_explanation_cells(cls, package: _WorkbookPackage) -> list[str]:
+        rows = package.read_rows("Итого по проекту", 1, 100, 1, 10)
+        header = next(
+            (
+                (row_index, column_index)
+                for row_index, row in enumerate(rows, 1)
+                for column_index, value in enumerate(row, 1)
+                if value not in (None, "")
+                and str(value).strip() == cls.STAGE_EXPLANATION_LABEL
+            ),
+            None,
+        )
+        if header is None:
+            raise ExcelEstimateError(
+                "Excel template is missing stage explanation column"
+            )
+        header_row, explanation_column = header
+        summary_rows = sorted(
+            {
+                _split_cell(cell)[1]
+                for sheet, cell, _formula in package.formula_fingerprint()
+                if sheet == "Итого по проекту"
+                and _split_cell(cell)[0] == 2
+                and header_row < _split_cell(cell)[1] <= header_row + 20
+            }
+        )
+        if not summary_rows:
+            raise ExcelEstimateError(
+                "Excel template has no stage summary rows below the explanation header"
+            )
+        column = _column_name(explanation_column)
+        return [f"{column}{row}" for row in summary_rows]
 
     @classmethod
     def _load_general_input_cells(cls, package: _WorkbookPackage) -> dict[str, str]:
@@ -271,7 +395,9 @@ class ExcelEstimateService:
             for index, row in enumerate(rows, 1)
             if row[0] not in (None, "")
         }
-        required_fields = set(cls.GENERAL_INPUT_LABELS) - {"confidence"}
+        required_fields = set(cls.GENERAL_INPUT_LABELS) - set(
+            cls.ARCHIVED_INPUT_LABELS
+        )
         missing = [
             cls.GENERAL_INPUT_LABELS[field]
             for field in required_fields
@@ -287,8 +413,34 @@ class ExcelEstimateService:
             if label in label_rows
         }
 
+    @classmethod
+    def _load_archived_input_cells(cls, package: _WorkbookPackage) -> dict[str, str]:
+        rows = package.read_rows("Технические данные", 1, 100, 1, 2)
+        label_rows = {
+            str(row[0]).strip(): index
+            for index, row in enumerate(rows, 1)
+            if row[0] not in (None, "")
+        }
+        missing = [
+            label
+            for label in cls.ARCHIVED_INPUT_LABELS.values()
+            if label not in label_rows
+        ]
+        if missing:
+            raise ExcelEstimateError(
+                "Excel template is missing archived input labels: "
+                + ", ".join(sorted(missing))
+            )
+        return {
+            field: f"B{label_rows[label]}"
+            for field, label in cls.ARCHIVED_INPUT_LABELS.items()
+        }
+
     def _normalize_removed_confidence_check(self, package: _WorkbookPackage) -> None:
-        if "confidence" in self._general_input_cells:
+        if (
+            "confidence" in self._general_input_cells
+            or "confidence" in self._archived_input_cells
+        ):
             return
         formula = next(
             (
@@ -318,25 +470,41 @@ class ExcelEstimateService:
             },
         )
 
-    @staticmethod
-    def _load_parameter_input_cells(package: _WorkbookPackage) -> dict[int, str]:
-        result: dict[int, str] = {}
-        for sheet, cell, formula in package.formula_fingerprint():
-            if sheet != "Ввод" or not cell.startswith("E"):
-                continue
-            input_match = re.match(r'IF\(D(\d+)<>"",D\1,', formula)
-            slot_rows = re.findall(r"\$A\$?(\d+)", formula)
-            if input_match is None or not slot_rows:
-                continue
-            slot_row = int(slot_rows[-1])
-            slot_value = package.read_rows("Ввод", slot_row, slot_row, 1, 1)[0][0]
-            if isinstance(slot_value, (int, float)) and int(slot_value) == slot_value:
-                result[int(slot_value)] = f"D{input_match.group(1)}"
-        if set(result) != set(range(1, 9)):
+    def _load_parameter_input_cells(
+        self, package: _WorkbookPackage
+    ) -> dict[str, dict[int, str]]:
+        rows = package.read_rows("Ввод", 1, 100, 1, 6)
+        header = next(
+            (
+                (row_index, column_index)
+                for row_index, row in enumerate(rows, 1)
+                for column_index, value in enumerate(row, 1)
+                if value not in (None, "")
+                and str(value).strip() == "Переопределить"
+            ),
+            None,
+        )
+        if header is None:
             raise ExcelEstimateError(
-                "Excel template must expose input formulas for parameter slots 1..8"
+                "Excel template is missing the parameter override column"
             )
-        return result
+        header_row, column_index = header
+        column = _column_name(column_index)
+        self._parameter_clear_range = f"{column}{header_row + 1}:{column}{header_row + 8}"
+        return {
+            project_type_code: {
+                definition.slot_number: f"{column}{header_row + position}"
+                for position, definition in enumerate(
+                    (
+                        item
+                        for item in definitions
+                        if item.influence_code != "INFO"
+                    ),
+                    1,
+                )
+            }
+            for project_type_code, definitions in self._parameters.items()
+        }
 
     @classmethod
     def _load_assumption_input_cells(
@@ -636,9 +804,10 @@ class ExcelEstimateService:
                 f"unknown project_type_code: {payload.project_type_code}"
             )
         rows = self._expand_work_items(payload.work_items)
-        if len(rows) > 100:
+        if len(rows) > self.work_row_capacity:
             raise ExcelEstimateError(
-                f"role assignments expand to {len(rows)} rows; the workbook limit is 100"
+                f"role assignments expand to {len(rows)} rows; the workbook limit is "
+                f"{self.work_row_capacity}"
             )
         parameters = self._resolve_parameters(payload)
         self._validate_dependencies(payload, parameters)
@@ -646,11 +815,21 @@ class ExcelEstimateService:
         package.clear(
             "Ввод",
             [
-                *(f"{cell}:{cell}" for cell in self._parameter_input_cells.values()),
+                self._parameter_clear_range,
                 self._assumption_clear_range,
             ],
         )
-        package.clear("Расчёт", ["A6:J105", "U6:V105"])
+        package.clear(
+            "Расчёт",
+            [
+                f"{column}{self._work_first_row}:{column}{self._work_last_row}"
+                for column in dict.fromkeys(self._work_input_columns.values())
+            ],
+        )
+        package.clear(
+            "Итого по проекту",
+            [f"{cell}:{cell}" for cell in self._stage_explanation_cells],
+        )
         package.clear("Внешние затраты", ["A6:G25", "K6:K25"])
 
         role_cells: dict[str, Any] = {}
@@ -693,9 +872,17 @@ class ExcelEstimateService:
                     for field, cell in self._general_input_cells.items()
                 },
                 **{
-                    self._parameter_input_cells[slot]: value
+                    self._parameter_input_cells[payload.project_type_code][slot]: value
                     for slot, value in parameters.items()
+                    if slot in self._parameter_input_cells[payload.project_type_code]
                 },
+            },
+        )
+        package.write_cells(
+            "Технические данные",
+            {
+                cell: general_values[field]
+                for field, cell in self._archived_input_cells.items()
             },
         )
         for index, item in enumerate(payload.assumptions):
@@ -710,23 +897,31 @@ class ExcelEstimateService:
             )
 
         for index, item in enumerate(rows):
-            row = 6 + index
+            row = self._work_first_row + index
             package.write_cells(
                 "Расчёт",
                 {
-                    f"A{row}": item.stage_no,
-                    f"B{row}": item.stage_name,
-                    f"C{row}": item.work_no,
-                    f"D{row}": item.work_name,
-                    f"E{row}": item.role,
-                    f"F{row}": item.estimated_hours,
-                    f"G{row}": item.hours_basis,
-                    f"H{row}": item.quantity_override,
-                    f"I{row}": item.sale_rate_override,
-                    f"J{row}": item.cost_rate_override,
-                    f"U{row}": item.site_or_contour,
-                    f"V{row}": item.comment,
+                    f"{self._work_input_columns['stage_no']}{row}": item.stage_no,
+                    f"{self._work_input_columns['stage_name']}{row}": item.stage_name,
+                    f"{self._work_input_columns['work_no']}{row}": item.work_no,
+                    f"{self._work_input_columns['work_name']}{row}": item.work_name,
+                    f"{self._work_input_columns['role']}{row}": item.role,
+                    f"{self._work_input_columns['estimated_hours']}{row}": item.estimated_hours,
+                    f"{self._work_input_columns['comment']}{row}": item.comment,
+                    f"{self._work_input_columns['hours_basis']}{row}": item.hours_basis,
+                    f"{self._work_input_columns['quantity_override']}{row}": item.quantity_override,
+                    f"{self._work_input_columns['sale_rate_override']}{row}": item.sale_rate_override,
+                    f"{self._work_input_columns['cost_rate_override']}{row}": item.cost_rate_override,
+                    f"{self._work_input_columns['site_or_contour']}{row}": item.site_or_contour,
                 },
+            )
+
+        explanations_by_stage = {
+            item.stage_no: item.explanation for item in payload.stage_explanations
+        }
+        for stage_no, cell in enumerate(self._stage_explanation_cells, 1):
+            package.write_cells(
+                "Итого по проекту", {cell: explanations_by_stage.get(stage_no)}
             )
 
         for index, item in enumerate(payload.external_costs):
@@ -751,7 +946,74 @@ class ExcelEstimateService:
         result = package.to_bytes()
         if self._recalculation_command:
             result = self._recalculate_with_libreoffice(result)
-        return result
+        final_package = _WorkbookPackage(result)
+        self._apply_output_formatting(final_package, len(rows))
+        return final_package.to_bytes()
+
+    @staticmethod
+    def _apply_output_formatting(
+        package: _WorkbookPackage, populated_work_rows: int
+    ) -> None:
+        package.set_number_format(
+            "Итого по проекту", ["C8"], r"dd\.mm\.yyyy"
+        )
+        first_row = 6
+        last_row = 55
+        rows = range(first_row, last_row + 1)
+        formats = {
+            "F": "#,##0.0",
+            "H": "General",
+            "I": "#,##0.00",
+            "J": '#,##0" ₽"',
+            "K": '#,##0" ₽"',
+            "L": "0",
+            "M": '#,##0" ₽"',
+            "N": '#,##0" ₽"',
+            "O": "General",
+            "P": "#,##0.00",
+            "Q": "#,##0.0",
+            "R": '#,##0" ₽"',
+            "S": '#,##0" ₽"',
+            "T": "#,##0.0",
+            "U": "General",
+            "V": "General",
+            "W": "General",
+        }
+        for column, format_code in formats.items():
+            package.set_number_format(
+                "Расчёт",
+                [f"{column}{row}" for row in rows],
+                format_code,
+            )
+        package.set_number_format(
+            "Технические данные",
+            [f"I{row}" for row in range(12, 20)],
+            "General",
+        )
+
+        package.set_row_height("Расчёт", 5, 50.4)
+        comments = package.read_rows("Расчёт", first_row, last_row, 7, 7)
+        for index, (comment,) in enumerate(comments):
+            row = first_row + index
+            if index >= populated_work_rows or not comment:
+                package.set_row_height("Расчёт", row, 42)
+                continue
+            line_count = max(3, math.ceil(len(str(comment)) / 55))
+            package.set_row_height(
+                "Расчёт", row, min(120, 24 + line_count * 10.5)
+            )
+
+        stage_explanations = package.read_rows(
+            "Итого по проекту", 15, 22, 6, 6
+        )
+        for index, (explanation,) in enumerate(stage_explanations, 15):
+            if not explanation:
+                package.set_row_height("Итого по проекту", index, 43.95)
+                continue
+            line_count = max(3, math.ceil(len(str(explanation)) / 44))
+            package.set_row_height(
+                "Итого по проекту", index, min(105, 22 + line_count * 10.5)
+            )
 
     @staticmethod
     def _validate_template_compatibility(package: _WorkbookPackage) -> None:
@@ -840,7 +1102,16 @@ class ExcelEstimateService:
     @staticmethod
     def _refresh_compatibility_status_caches(package: _WorkbookPackage) -> None:
         """Refresh status cells that LibreOffice occasionally leaves one step stale."""
-        recognized = package.read_rows("Проверки", 6, 6, 2, 2)[0][0] == 1
+        project_type = package.read_rows("Ввод", 5, 5, 2, 2)[0][0]
+        known_types = {
+            row[0]
+            for row in package.read_rows("Справочник типов", 2, 27, 1, 1)
+            if row[0]
+        }
+        recognized = project_type in known_types
+        package.write_formula_cached_value(
+            "Проверки", "B6", 1 if recognized else 0
+        )
         package.write_formula_cached_value(
             "Проверки", "E6", "PASS" if recognized else "FAIL"
         )
@@ -1009,7 +1280,6 @@ class ExcelEstimateService:
                 )
             ]
             for assignment in assignments:
-                comment_parts = [item.comment, assignment.responsibility]
                 result.append(
                     _ExpandedWorkRow(
                         stage_no=item.stage_no,
@@ -1023,9 +1293,7 @@ class ExcelEstimateService:
                         sale_rate_override=assignment.sale_rate_override,
                         cost_rate_override=assignment.cost_rate_override,
                         site_or_contour=item.site_or_contour,
-                        comment="; ".join(
-                            part.strip() for part in comment_parts if part
-                        ),
+                        comment=assignment.hours_rationale,
                     )
                 )
         return result
@@ -1065,6 +1333,7 @@ class _WorkbookPackage:
         self.sheet_paths = self._sheet_paths()
         self._shared_strings = self._read_shared_strings()
         self._trees: dict[str, ET.Element] = {}
+        self._number_format_style_cache: dict[tuple[int, str], int] = {}
 
     def _register_namespaces(self) -> None:
         seen: set[tuple[str, str]] = set()
@@ -1195,6 +1464,79 @@ class _WorkbookPackage:
                 cell = ET.Element(f"{{{_MAIN_NS}}}c", {"r": address})
                 row.append(cell)
             self._set_cell_value(cell, value)
+
+    def set_number_format(
+        self, sheet_name: str, addresses: Iterable[str], format_code: str
+    ) -> None:
+        sheet = self._tree(self.sheet_paths[sheet_name])
+        cells = {
+            cell.attrib.get("r"): cell
+            for cell in sheet.findall(f".//{{{_MAIN_NS}}}c")
+            if cell.attrib.get("r")
+        }
+        styles = self._tree("xl/styles.xml")
+        cell_xfs = styles.find(f"{{{_MAIN_NS}}}cellXfs")
+        if cell_xfs is None:
+            raise ExcelEstimateError("Excel styles are missing cellXfs")
+        num_format_id = self._number_format_id(styles, format_code)
+        for address in addresses:
+            cell = cells.get(address)
+            if cell is None:
+                continue
+            source_style = int(cell.attrib.get("s", "0"))
+            cache_key = (source_style, format_code)
+            target_style = self._number_format_style_cache.get(cache_key)
+            if target_style is None:
+                source_xf = list(cell_xfs)[source_style]
+                target_xf = deepcopy(source_xf)
+                target_xf.attrib["numFmtId"] = str(num_format_id)
+                target_xf.attrib["applyNumberFormat"] = "1"
+                cell_xfs.append(target_xf)
+                target_style = len(cell_xfs) - 1
+                cell_xfs.attrib["count"] = str(len(cell_xfs))
+                self._number_format_style_cache[cache_key] = target_style
+            cell.attrib["s"] = str(target_style)
+
+    @staticmethod
+    def _number_format_id(styles: ET.Element, format_code: str) -> int:
+        if format_code == "General":
+            return 0
+        num_formats = styles.find(f"{{{_MAIN_NS}}}numFmts")
+        if num_formats is None:
+            num_formats = ET.Element(f"{{{_MAIN_NS}}}numFmts", {"count": "0"})
+            styles.insert(0, num_formats)
+        existing_ids = []
+        for item in num_formats.findall(f"{{{_MAIN_NS}}}numFmt"):
+            existing_ids.append(int(item.attrib["numFmtId"]))
+            if item.attrib.get("formatCode") == format_code:
+                return int(item.attrib["numFmtId"])
+        num_format_id = max([163, *existing_ids]) + 1
+        ET.SubElement(
+            num_formats,
+            f"{{{_MAIN_NS}}}numFmt",
+            {"numFmtId": str(num_format_id), "formatCode": format_code},
+        )
+        num_formats.attrib["count"] = str(len(num_formats))
+        return num_format_id
+
+    def set_row_height(self, sheet_name: str, row_number: int, height: float) -> None:
+        root = self._tree(self.sheet_paths[sheet_name])
+        sheet_data = root.find(f"{{{_MAIN_NS}}}sheetData")
+        if sheet_data is None:
+            raise ExcelEstimateError(f"sheet {sheet_name} has no sheetData")
+        row = next(
+            (
+                item
+                for item in sheet_data.findall(f"{{{_MAIN_NS}}}row")
+                if item.attrib.get("r") == str(row_number)
+            ),
+            None,
+        )
+        if row is None:
+            row = ET.Element(f"{{{_MAIN_NS}}}row", {"r": str(row_number)})
+            sheet_data.append(row)
+        row.attrib["ht"] = f"{height:g}"
+        row.attrib["customHeight"] = "1"
 
     def write_formula_cached_value(
         self, sheet_name: str, address: str, value: str | int | float

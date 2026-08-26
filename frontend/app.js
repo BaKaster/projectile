@@ -14,7 +14,7 @@ import {
   updateAnalysisProjectType,
   updateChat,
   uploadDocuments,
-} from "./api.js";
+} from "./api.js?v=20260825-2";
 import { ACTIVE_STATUSES, pollAnalysis, SUCCESS_STATUSES } from "./polling.js";
 
 const apiBase = window.PROJECTILE_CONFIG?.apiBase || "http://localhost:8000";

@@ -92,6 +92,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[
+            "Content-Disposition",
+            "X-Excel-Recalculation",
+            "X-Projectile-Artifact-Attached",
+            "X-Projectile-Artifact-Document-Id",
+            "X-Projectile-Artifact-Version",
+        ],
     )
     application.include_router(router)
     return application

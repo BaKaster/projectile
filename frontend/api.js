@@ -130,7 +130,10 @@ export function updateAnalysisProjectType(apiBase, projectId, runId, projectType
 }
 
 export async function downloadAnalysisExcel(apiBase, projectId, runId) {
-  const response = await fetch(analysisExcelUrl(apiBase, projectId, runId));
+  const url = `${analysisExcelUrl(apiBase, projectId, runId)}?download=${Date.now()}`;
+  const response = await fetch(url, {
+    cache: "no-store",
+  });
   if (!response.ok) {
     let payload;
     try { payload = await response.json(); } catch { payload = null; }

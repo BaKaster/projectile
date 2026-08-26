@@ -20,9 +20,7 @@ class Settings(BaseSettings):
     project_stage_templates_path: Path = Path("data/project-stage-templates.json")
     project_work_templates_path: Path = Path("data/project-work-templates.json")
     role_effort_catalog_path: Path = Path("data/role-effort-catalog.json")
-    excel_estimate_template_path: Path = Path(
-        "Шаблон.xlsx"
-    )
+    excel_estimate_template_path: Path = Path("Шаблон.xlsx")
     excel_recalculation_command: str | None = None
     excel_recalculation_timeout_seconds: int = Field(default=120, gt=0, le=600)
     max_upload_size_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
