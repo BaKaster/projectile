@@ -3,11 +3,17 @@ from __future__ import annotations
 import uuid
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.analysis_contracts import DataGap, material_questions
-from app.analyzer import CodexProjectAnalyzer, SourceText, _source_role
+from app.analyzer import (
+    CodexProjectAnalyzer,
+    SourceText,
+    _source_role,
+    catalog_for_prompt,
+)
 from app.recognition import DocumentRecognizer, UnsafeArchiveError
 
 
@@ -140,6 +146,29 @@ def test_model_input_has_document_ids_and_is_bounded() -> None:
     assert document_id in prompt
     assert len(prompt) <= 10_100
     assert 'role="customer_requirements"' in prompt
+
+
+def test_model_catalog_keeps_only_type_classification_context() -> None:
+    row = SimpleNamespace(
+        code="SUP_L1",
+        direction_code="SUP",
+        name="Поддержка первой линии",
+        details="Регулярная поддержка пользователей",
+        attributes={
+            "classification_hints": ["L1", "обращения"],
+            "typical_duration_months": 12,
+        },
+    )
+
+    assert catalog_for_prompt([row]) == [
+        {
+            "code": "SUP_L1",
+            "direction": "SUP",
+            "name": "Поддержка первой линии",
+            "details": "Регулярная поддержка пользователей",
+            "classification_hints": ["L1", "обращения"],
+        }
+    ]
 
 
 def test_large_single_document_skips_redundant_digest_pass() -> None:

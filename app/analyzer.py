@@ -503,13 +503,19 @@ def _excerpt(text: str, budget: int) -> str:
 
 
 def catalog_for_prompt(rows: list[Any]) -> list[dict[str, Any]]:
+    """Keep only classification evidence in the model-facing type catalogue.
+
+    Commercial and lifecycle attributes are consumed by deterministic services
+    after classification. Sending them to every chat request adds context but
+    cannot improve choosing a project type.
+    """
     return [
         {
             "code": row.code,
             "direction": row.direction_code,
             "name": row.name,
             "details": row.details,
-            **row.attributes,
+            "classification_hints": row.attributes.get("classification_hints", []),
         }
         for row in rows
     ]
