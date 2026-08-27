@@ -29,6 +29,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.codex_cli import codex_cli_available
+from app.commercial_proposal import (
+    CommercialProposalError,
+    proposal_payload_from_analysis,
+)
 from app.database import get_session
 from app.excel_estimate import (
     ExcelEstimateError,
@@ -2122,6 +2126,153 @@ async def download_analysis_xlsx(
                 f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
             ),
             "X-Excel-Recalculation": service.recalculation_status,
+            "X-Projectile-Artifact-Attached": "true",
+            "X-Projectile-Artifact-Document-Id": str(artifact_document_id),
+            "X-Projectile-Artifact-Version": str(artifact_version),
+        },
+    )
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/analysis-runs/{run_id}/proposal.docx",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document": {}
+            }
+        }
+    },
+    tags=["analysis"],
+)
+async def download_commercial_proposal(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session: SessionDependency,
+    request: Request,
+) -> Response:
+    run = await session.scalar(
+        select(AnalysisRun).where(
+            AnalysisRun.id == run_id,
+            AnalysisRun.project_id == project_id,
+            AnalysisRun.status == "ready",
+        )
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Answer or skip the questions before creating a commercial proposal",
+        )
+    result = await session.scalar(
+        select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        estimate_service = request.app.state.excel_estimate_service
+        estimate = _analysis_estimate_payload(project, result, run, estimate_service)
+        await _apply_current_rate_overrides(estimate, session)
+        proposal = proposal_payload_from_analysis(
+            project_name=project.name,
+            proposal_date=result.created_at.date(),
+            summary=result.summary,
+            rationale=result.rationale,
+            facts=result.facts,
+            questions=result.questions,
+            assumptions=result.assumptions,
+            warnings=result.warnings,
+            stage_plan=result.raw_result.get("stage_plan"),
+            estimate=estimate,
+        )
+        content = request.app.state.commercial_proposal_service.build(proposal)
+    except (ExcelEstimateError, CommercialProposalError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    storage = LocalFileStorage(
+        request.app.state.settings.storage_root,
+        request.app.state.settings.max_upload_size_bytes,
+        request.app.state.settings.upload_chunk_size_bytes,
+    )
+    artifact_source_path = "generated/current-commercial-proposal.docx"
+    checksum = hashlib.sha256(content).hexdigest()
+    previous = await session.scalar(
+        select(Document)
+        .join(ProjectDocument, ProjectDocument.document_id == Document.id)
+        .where(
+            ProjectDocument.project_id == project_id,
+            Document.source_path == artifact_source_path,
+        )
+        .order_by(Document.version.desc())
+        .limit(1)
+    )
+    artifact_document_id = previous.id if previous is not None else None
+    artifact_version = previous.version if previous is not None else 1
+    if previous is None or previous.checksum_sha256 != checksum:
+        version = 1 if previous is None else previous.version + 1
+        document_id = uuid.uuid4()
+        stored_filename = safe_filename(f"{project.name}-КП.docx")
+        persisted = storage.persist_bytes(
+            content,
+            project_id,
+            document_id,
+            version,
+            stored_filename,
+        )
+        try:
+            session.add_all(
+                [
+                    Document(
+                        id=document_id,
+                        original_filename=stored_filename,
+                        source_path=artifact_source_path,
+                        stored_filename=stored_filename,
+                        media_type=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "wordprocessingml.document"
+                        ),
+                        size_bytes=len(content),
+                        checksum_sha256=checksum,
+                        storage_uri=persisted.storage_uri,
+                        version=version,
+                    ),
+                    ProjectDocument(project_id=project_id, document_id=document_id),
+                    DocumentExtraction(
+                        document_id=document_id,
+                        status="pending",
+                        tables=[],
+                        errors=[],
+                    ),
+                ]
+            )
+            await session.commit()
+            artifact_document_id = document_id
+            artifact_version = version
+        except Exception:
+            storage.remove_persisted(persisted)
+            raise
+    project.updated_at = datetime.now(UTC)
+    await session.commit()
+
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", project.name).strip("-_")
+    ascii_name = f"{safe_name or 'project'}-proposal.docx"
+    unicode_name = quote(f"{project.name}-КП.docx")
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
+            ),
             "X-Projectile-Artifact-Attached": "true",
             "X-Projectile-Artifact-Document-Id": str(artifact_document_id),
             "X-Projectile-Artifact-Version": str(artifact_version),

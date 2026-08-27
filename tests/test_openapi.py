@@ -47,6 +47,13 @@ def test_chat_and_question_endpoints_are_exposed() -> None:
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         in xlsx["responses"]["200"]["content"]
     )
+    proposal = paths[
+        "/api/v1/projects/{project_id}/analysis-runs/{run_id}/proposal.docx"
+    ]["get"]
+    assert (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        in proposal["responses"]["200"]["content"]
+    )
 
 
 def test_stage_plan_endpoint_has_typed_contract() -> None:

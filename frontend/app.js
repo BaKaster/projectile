@@ -4,6 +4,7 @@ import {
   createChat,
   deleteChat,
   downloadAnalysisExcel,
+  downloadCommercialProposal,
   formatApiError,
   getAnalysisRun,
   getChat,
@@ -86,7 +87,9 @@ function setBusy(value) {
 }
 
 
-function setExcelLoading(value) {
+function setArtifactLoading(value, title = "Формируем Excel-файл") {
+  const heading = elements.excelLoading.querySelector("strong");
+  if (heading) heading.textContent = title;
   elements.excelLoading.classList.toggle("hidden", !value);
 }
 
@@ -403,7 +406,7 @@ async function generateExcel(run, button = null) {
   const defaultLabel = label?.textContent;
   if (button) button.disabled = true;
   if (label) label.textContent = "Формируем и закрепляем…";
-  setExcelLoading(true);
+  setArtifactLoading(true);
   try {
     const artifact = await downloadAnalysisExcel(apiBase, state.chat.id, run.run_id);
     const url = URL.createObjectURL(artifact.blob);
@@ -421,41 +424,75 @@ async function generateExcel(run, button = null) {
     showToast(formatApiError(error)); return false;
   } finally {
     if (button) button.disabled = false;
-    setExcelLoading(false);
+    setArtifactLoading(false);
+  }
+}
+
+async function generateProposal(run, button = null) {
+  const label = button?.querySelector("span");
+  const defaultLabel = label?.textContent;
+  if (button) button.disabled = true;
+  if (label) label.textContent = "Формируем и закрепляем…";
+  setArtifactLoading(true, "Формируем коммерческое предложение");
+  try {
+    const artifact = await downloadCommercialProposal(apiBase, state.chat.id, run.run_id);
+    const url = URL.createObjectURL(artifact.blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = artifact.filename;
+    document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    if (label) label.textContent = artifact.attached ? "КП закреплено за проектом" : defaultLabel;
+    showToast(artifact.attached
+      ? "КП скачано и сохранено в контексте проекта для дальнейшего обсуждения."
+      : "КП скачано.");
+    if (artifact.attached && label) setTimeout(() => { label.textContent = defaultLabel; }, 3000);
+    return true;
+  } catch (error) {
+    if (label) label.textContent = defaultLabel;
+    showToast(formatApiError(error)); return false;
+  } finally {
+    if (button) button.disabled = false;
+    setArtifactLoading(false);
   }
 }
 
 function renderExcelPanel(run) {
   const panel = document.createElement("section"); panel.className = "excel-panel";
+  const actions = document.createElement("div"); actions.className = "artifact-actions";
   const button = document.createElement("button"); button.type = "button"; button.className = "excel-button";
   button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7zM15 3v5h4M10 12l4 5m0-5-4 5"/></svg><span>Сформировать Excel файл</span>';
-  button.setAttribute("aria-expanded", "false");
-  button.addEventListener("click", async () => {
+  const proposalButton = document.createElement("button"); proposalButton.type = "button"; proposalButton.className = "excel-button proposal-button";
+  proposalButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7zM15 3v5h4M10 12h6M10 16h6"/></svg><span>Сформировать КП</span>';
+
+  const bindArtifact = (trigger, generate) => {
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.addEventListener("click", async () => {
     const questions = run.result?.questions || [];
-    const shouldAskQuestions = questions.length && (
-      run.status === "requires_input" ||
-      (run.status === "ready" && run.current_step === "questions_skipped")
-    );
+    const shouldAskQuestions = questions.length && run.status === "requires_input";
     if (shouldAskQuestions) {
       const existing = panel.querySelector(".excel-questions");
-      if (existing) { existing.querySelector("textarea")?.focus(); return; }
-      button.setAttribute("aria-expanded", "true");
-      panel.append(buildExcelQuestions(run, questions, button));
+      existing?.remove();
+      button.setAttribute("aria-expanded", "false");
+      proposalButton.setAttribute("aria-expanded", "false");
+      trigger.setAttribute("aria-expanded", "true");
+      panel.append(buildExcelQuestions(run, questions, trigger, generate));
       panel.querySelector("textarea")?.focus();
       panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       return;
     }
     if (run.status !== "ready") {
-      showToast("Дождитесь завершения анализа перед формированием Excel.");
+      showToast("Дождитесь завершения анализа перед формированием файла.");
       return;
     }
-    await generateExcel(run, button);
+    await generate(run, trigger);
   });
-  panel.append(button);
+  };
+  bindArtifact(button, generateExcel);
+  bindArtifact(proposalButton, generateProposal);
+  actions.append(button, proposalButton); panel.append(actions);
   return panel;
 }
 
-function buildExcelQuestions(run, questions, trigger) {
+function buildExcelQuestions(run, questions, trigger, generate = generateExcel) {
   const form = document.createElement("form"); form.className = "excel-questions";
   const title = document.createElement("h3"); title.textContent = "Нужна дополнительная информация";
   const copy = document.createElement("p");
@@ -479,7 +516,7 @@ function buildExcelQuestions(run, questions, trigger) {
     try {
       state.run = await skipAnalysisQuestions(apiBase, state.chat.id, run.run_id);
       renderAnalysis(state.run);
-      await generateExcel(state.run);
+      await generate(state.run);
     } catch (error) {
       cancel.disabled = false; skip.disabled = false; submit.disabled = false;
       showToast(formatApiError(error));
@@ -493,13 +530,13 @@ function buildExcelQuestions(run, questions, trigger) {
       .map((question, index) => ({ question: question.question, answer: form.elements[`answer-${index}`].value.trim() }))
       .filter((item) => item.answer);
     if (!answers.length) { showToast("Заполните хотя бы одно поле или нажмите «Пропустить вопросы»."); return; }
-    const content = ["Ответы для формирования Excel:", ...answers.map((item, index) => `${index + 1}. ${item.question}\nОтвет: ${item.answer}`)].join("\n\n");
+    const content = ["Ответы для формирования проектных файлов:", ...answers.map((item, index) => `${index + 1}. ${item.question}\nОтвет: ${item.answer}`)].join("\n\n");
     setBusy(true); submit.disabled = true; cancel.disabled = true; skip.disabled = true;
     try {
       renderUserMessage(content, []);
       const accepted = await answerAnalysisQuestions(apiBase, state.chat.id, run.run_id, content);
       state.run = accepted.analysis; renderAnalysis(accepted.analysis); refreshHistory();
-      await generateExcel(accepted.analysis);
+      await generate(accepted.analysis);
     } catch (error) { setBusy(false); submit.disabled = false; cancel.disabled = false; skip.disabled = false; showToast(formatApiError(error)); }
   });
   actions.append(cancel, skip, submit); form.append(title, copy, list, actions);
