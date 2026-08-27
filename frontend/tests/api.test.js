@@ -3,12 +3,14 @@ import test from "node:test";
 import {
   ApiError,
   analysisExcelUrl,
+  analysisProposalUrl,
   analysisReportUrl,
   buildUploadFormData,
   createProject,
   createChat,
   deleteChat,
   downloadAnalysisExcel,
+  downloadCommercialProposal,
   getProjectTypes,
   getLatestAnalysis,
   sendChatMessage,
@@ -38,8 +40,16 @@ test("Excel report URL targets the completed analysis", () => {
   );
 });
 
+test("commercial proposal URL targets the completed analysis", () => {
+  assert.equal(
+    analysisProposalUrl("http://localhost:8000", "project", "run"),
+    "http://localhost:8000/api/v1/projects/project/analysis-runs/run/proposal.docx",
+  );
+});
+
 test("Excel download exposes project attachment metadata", async (context) => {
-  context.mock.method(globalThis, "fetch", async () => new Response("xlsx", {
+  context.mock.method(Date, "now", () => 123456789);
+  const fetchMock = context.mock.method(globalThis, "fetch", async () => new Response("xlsx", {
     status: 200,
     headers: {
       "Content-Disposition": "attachment; filename=estimate.xlsx; filename*=UTF-8''project-%D0%BE%D1%86%D0%B5%D0%BD%D0%BA%D0%B0.xlsx",
@@ -51,10 +61,38 @@ test("Excel download exposes project attachment metadata", async (context) => {
 
   const result = await downloadAnalysisExcel("http://localhost:8000", "project", "run");
 
+  assert.equal(
+    fetchMock.mock.calls[0].arguments[0],
+    "http://localhost:8000/api/v1/projects/project/analysis-runs/run/report.xlsx?download=123456789",
+  );
+  assert.deepEqual(fetchMock.mock.calls[0].arguments[1], { cache: "no-store" });
   assert.equal(result.filename, "project-оценка.xlsx");
   assert.equal(result.attached, true);
   assert.equal(result.documentId, "document-id");
   assert.equal(await result.blob.text(), "xlsx");
+});
+
+test("commercial proposal download exposes project attachment metadata", async (context) => {
+  context.mock.method(Date, "now", () => 123456789);
+  const fetchMock = context.mock.method(globalThis, "fetch", async () => new Response("docx", {
+    status: 200,
+    headers: {
+      "Content-Disposition": "attachment; filename=proposal.docx; filename*=UTF-8''project-%D0%9A%D0%9F.docx",
+      "X-Projectile-Artifact-Attached": "true",
+      "X-Projectile-Artifact-Document-Id": "proposal-id",
+    },
+  }));
+
+  const result = await downloadCommercialProposal("http://localhost:8000", "project", "run");
+
+  assert.equal(
+    fetchMock.mock.calls[0].arguments[0],
+    "http://localhost:8000/api/v1/projects/project/analysis-runs/run/proposal.docx?download=123456789",
+  );
+  assert.equal(result.filename, "project-КП.docx");
+  assert.equal(result.attached, true);
+  assert.equal(result.documentId, "proposal-id");
+  assert.equal(await result.blob.text(), "docx");
 });
 
 function mockResponse(body, status = 200) {

@@ -245,10 +245,13 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
 .download-button:hover { background: #ff5a52; transform: translateY(-1px); }
 .download-button svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .excel-panel { margin: 0; padding: 18px 28px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--violet) 4%, var(--surface)); }
+.artifact-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .excel-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 54px; border: 1px solid var(--violet); border-radius: 5px; padding: 14px 18px; color: var(--ink); background: var(--surface); cursor: pointer; font-size: 12px; font-weight: 800; transition: .16s ease; }
 .excel-button:hover { color: #fff; background: var(--violet); transform: translateY(-1px); }
 .excel-button:disabled { opacity: .65; cursor: wait; transform: none; }
 .excel-button svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.proposal-button { border-color: var(--red); }
+.proposal-button:hover { background: var(--red); }
 .excel-questions { margin-top: 10px; overflow: hidden; border: 1px solid var(--line); border-left: 4px solid var(--red); border-radius: var(--radius-md); background: var(--surface); padding: 22px; }
 .excel-questions h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
 .excel-questions h3::before { content: "// "; color: var(--red); }
@@ -331,6 +334,7 @@ button, a, textarea { -webkit-tap-highlight-color: transparent; }
   .analysis-footer { align-items: flex-start; flex-direction: column; padding: 17px 20px; }
   .download-button { width: 38px; align-self: flex-end; }
   .excel-panel { padding: 16px 20px; }
+  .artifact-actions { grid-template-columns: 1fr; }
   .excel-questions { padding: 18px 15px; }
   .excel-question-actions { flex-direction: column; }
   .excel-question-actions button { width: 100%; }

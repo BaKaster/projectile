@@ -121,6 +121,10 @@ export function analysisExcelUrl(apiBase, projectId, runId) {
   return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/report.xlsx`;
 }
 
+export function analysisProposalUrl(apiBase, projectId, runId) {
+  return `${normalizeApiBase(apiBase)}/api/v1/projects/${projectId}/analysis-runs/${runId}/proposal.docx`;
+}
+
 export function updateAnalysisProjectType(apiBase, projectId, runId, projectTypeCode) {
   return request(apiBase, `/api/v1/projects/${projectId}/analysis-runs/${runId}/project-type`, {
     method: "PATCH",
@@ -130,7 +134,23 @@ export function updateAnalysisProjectType(apiBase, projectId, runId, projectType
 }
 
 export async function downloadAnalysisExcel(apiBase, projectId, runId) {
-  const response = await fetch(analysisExcelUrl(apiBase, projectId, runId));
+  return downloadProjectArtifact(
+    `${analysisExcelUrl(apiBase, projectId, runId)}?download=${Date.now()}`,
+    "projectile-estimate.xlsx",
+  );
+}
+
+export async function downloadCommercialProposal(apiBase, projectId, runId) {
+  return downloadProjectArtifact(
+    `${analysisProposalUrl(apiBase, projectId, runId)}?download=${Date.now()}`,
+    "projectile-proposal.docx",
+  );
+}
+
+async function downloadProjectArtifact(url, fallbackFilename) {
+  const response = await fetch(url, {
+    cache: "no-store",
+  });
   if (!response.ok) {
     let payload;
     try { payload = await response.json(); } catch { payload = null; }
@@ -144,7 +164,7 @@ export async function downloadAnalysisExcel(apiBase, projectId, runId) {
   const disposition = response.headers.get("Content-Disposition") || "";
   const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
   const plainName = disposition.match(/filename="([^"]+)"/i)?.[1];
-  let filename = plainName || "projectile-estimate.xlsx";
+  let filename = plainName || fallbackFilename;
   if (encodedName) {
     try { filename = decodeURIComponent(encodedName); } catch { filename = plainName || filename; }
   }

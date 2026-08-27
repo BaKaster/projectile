@@ -29,6 +29,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.codex_cli import codex_cli_available
+from app.commercial_proposal import (
+    CommercialProposalError,
+    proposal_payload_from_analysis,
+)
 from app.database import get_session
 from app.excel_estimate import (
     ExcelEstimateError,
@@ -293,6 +297,8 @@ async def build_estimate_workbook(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
         headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
             "Content-Disposition": (
                 f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
             ),
@@ -1515,6 +1521,40 @@ def _analysis_estimate_payload(
             sorted(stages.values(), key=lambda value: value.get("order", 999)), 1
         )
     }
+    stage_explanations = []
+    for stage in sorted(stages.values(), key=lambda value: value.get("order", 999)):
+        stage_no = stage_numbers[stage["code"]]
+        explanation_parts: list[str] = []
+        if stage.get("objective"):
+            objective = _clean_explanation_fragment(stage["objective"])
+            explanation_parts.append(
+                f"Этап включён, чтобы {_lower_initial(objective)}."
+            )
+        if stage.get("selection_reason"):
+            reason = _clean_explanation_fragment(stage["selection_reason"])
+            explanation_parts.append(
+                f"Он необходим, потому что {_lower_initial(reason)}."
+            )
+        deliverables = [
+            _clean_explanation_fragment(item)
+            for item in stage.get("deliverables", [])
+            if item
+        ]
+        if deliverables:
+            explanation_parts.append(
+                "По итогам заказчик получает: " + "; ".join(deliverables) + "."
+            )
+        if not explanation_parts:
+            explanation_parts.append(
+                f"Этап нужен для выполнения и приёмки работ «{stage.get('name') or stage['code']}»."
+            )
+        stage_explanations.append(
+            {
+                "stage_no": stage_no,
+                "explanation": " ".join(explanation_parts)[:700],
+            }
+        )
+
     work_items = []
     for package in work_plan.get("packages", []):
         if not isinstance(package, dict):
@@ -1531,6 +1571,7 @@ def _analysis_estimate_payload(
                     "role": assignment.get("role_code"),
                     "estimated_hours": assignment.get("effort_hours"),
                     "responsibility": assignment.get("responsibility"),
+                    "hours_rationale": _hours_rationale(work, assignment),
                 }
                 for assignment in work.get("role_assignments", [])
                 if isinstance(assignment, dict)
@@ -1542,10 +1583,22 @@ def _analysis_estimate_payload(
                     {
                         "role": work["role_code"],
                         "estimated_hours": work["effort_hours"],
+                        "hours_rationale": _hours_rationale(work),
                     }
                 ]
             if not assignments:
-                assignments = [{"role": "project_manager", "estimated_hours": 8}]
+                assignments = [
+                    {
+                        "role": "project_manager",
+                        "estimated_hours": 8,
+                        "hours_rationale": (
+                            "На предварительный анализ и формирование оценки заложено 8 ч. "
+                            "В это время входит изучение исходных данных, уточнение границ работ "
+                            "и подготовка предварительной оценки. Поскольку исходные сведения "
+                            "пока недостаточно детализированы, значение принято как экспертный резерв."
+                        ),
+                    }
+                ]
             comment_parts = [work.get("selection_reason")]
             comment_parts.extend(work.get("assumptions") or [])
             work_items.append(
@@ -1574,15 +1627,17 @@ def _analysis_estimate_payload(
             "comment": "Резервный состав работ: исходные данные не позволили разложить проект детальнее.",
         }]
 
-    # The workbook has exactly 100 calculation rows.  Do not expose that
+    # The workbook has a fixed number of calculation rows.  Do not expose that
     # implementation limit to the customer: retain total hours and fold the
     # smallest auxiliary assignments into the primary role of the same work.
     # The resulting loss of role granularity is explicitly disclosed as a risk.
     compacted_assignments = 0
+    row_capacity = estimate_service.work_row_capacity if estimate_service else 50
+
     def expanded_row_count() -> int:
         return sum(len(item["role_assignments"]) for item in work_items)
 
-    while expanded_row_count() > 100:
+    while expanded_row_count() > row_capacity:
         candidates = [
             (assignment["estimated_hours"], work_index, assignment_index)
             for work_index, item in enumerate(work_items)
@@ -1596,18 +1651,18 @@ def _analysis_estimate_payload(
         removed = assignments.pop(assignment_index)
         target = max(assignments, key=lambda item: item["estimated_hours"])
         target["estimated_hours"] += removed["estimated_hours"]
-        work_items[work_index]["comment"] = (
-            (work_items[work_index].get("comment") or "")
-            + f"; Трудозатраты роли {removed['role']} объединены с {target['role']} "
-            "из-за лимита строк Excel."
-        )[:2000]
+        target["hours_rationale"] = _explain_compacted_hours(
+            target.get("hours_rationale"),
+            target["estimated_hours"],
+            removed["estimated_hours"],
+        )
         compacted_assignments += 1
 
-    if expanded_row_count() > 100:
-        # This only applies to exceptional plans with more than 100 independent
-        # works.  Preserve the total in the same stage rather than failing the
+    if expanded_row_count() > row_capacity:
+        # This only applies to exceptional plans with more independent works
+        # than the current template can display. Preserve the total in the
         # report download.
-        while expanded_row_count() > 100 and len(work_items) > 1:
+        while expanded_row_count() > row_capacity and len(work_items) > 1:
             source_index = min(
                 range(len(work_items)),
                 key=lambda index: sum(
@@ -1666,9 +1721,9 @@ def _analysis_estimate_payload(
     if compacted_assignments:
         assumptions.insert(0, {
             "type": "Риск",
-            "text": "Детализация ролей укрупнена для совместимости с лимитом строк Excel.",
+            "text": "Часть участия вспомогательных специалистов объединена с основной ролью в строках расчёта.",
             "source": None,
-            "impact": "Общая трудоёмкость сохранена; распределение часов по вспомогательным ролям отражено в комментариях к работам.",
+            "impact": "Общая трудоёмкость сохранена; объединённые часы указаны в пояснениях к соответствующим работам.",
         })
     if result.project_type_code is None:
         assumptions.insert(0, {
@@ -1743,6 +1798,7 @@ def _analysis_estimate_payload(
                 "commercial_reserve_rate": 0,
                 "type_parameters": type_parameters,
                 "work_items": work_items,
+                "stage_explanations": stage_explanations,
                 "external_costs": result.raw_result.get("external_costs", []),
                 "assumptions": assumptions[:4],
             }
@@ -1769,6 +1825,181 @@ async def _apply_current_rate_overrides(
     payload.role_rate_overrides = {
         code: (rate.sale_rate, rate.cost_rate) for code, rate in rates.items()
     }
+
+
+def _hours_rationale(
+    work: dict,
+    assignment: dict | None = None,
+) -> str | None:
+    assignment = assignment or {}
+    assigned_hours = assignment.get("effort_hours", work.get("effort_hours"))
+    if not isinstance(assigned_hours, (int, float)):
+        return None
+
+    work_name = _clean_explanation_fragment(
+        work.get("name") or work.get("work_code") or "выполнение работы"
+    )
+    rendered_hours = _format_hours(assigned_hours)
+    responsibility = _clean_explanation_fragment(
+        assignment.get("responsibility") or ""
+    )
+    assignment_rationale = _clean_explanation_fragment(
+        assignment.get("rationale") or ""
+    )
+    is_review = any(
+        marker in f"{responsibility} {assignment_rationale}".casefold()
+        for marker in ("провер", "согласован", "эксперт", "контрол")
+    )
+
+    if is_review:
+        sentences = [
+            f"На экспертную проверку и согласование результата работы «{work_name}» "
+            f"заложено {rendered_hours} ч."
+        ]
+    else:
+        sentences = [
+            f"На выполнение работы «{work_name}» заложено {rendered_hours} ч."
+        ]
+        if responsibility and responsibility.casefold() not in {
+            "выполнение основной части работы",
+            "основное выполнение",
+        }:
+            sentences.append(
+                f"В это время входит {_lower_initial(responsibility)}."
+            )
+
+    minimum = work.get("effort_min_hours")
+    maximum = work.get("effort_max_hours")
+    if (
+        not is_review
+        and isinstance(minimum, (int, float))
+        and isinstance(maximum, (int, float))
+    ):
+        sentences.append(
+            "Ориентир для работ такого объёма — "
+            f"{_format_hours(minimum)}–{_format_hours(maximum)} ч; "
+            f"в смету включено наиболее вероятное значение {rendered_hours} ч."
+        )
+
+    drivers = [
+        _humanize_driver(item)
+        for item in work.get("estimation_drivers", [])
+        if item
+    ]
+    if drivers:
+        sentences.append(
+            "Оценка учитывает " + ", ".join(drivers[:3]) + "."
+        )
+
+    facts = _select_explanation_facts(work.get("context_facts", []))
+    if facts:
+        sentences.append("Также учтено, что " + "; ".join(facts) + ".")
+
+    return _truncate_explanation(" ".join(sentences), 520)
+
+
+def _clean_explanation_fragment(value: object) -> str:
+    rendered = re.sub(r"\s+", " ", str(value or "")).strip()
+    rendered = re.sub(r"\bscope\b", "объём работ", rendered, flags=re.IGNORECASE)
+    return rendered.rstrip(" .;:")
+
+
+def _lower_initial(value: str) -> str:
+    if not value or value[:2].isupper():
+        return value
+    return value[0].lower() + value[1:]
+
+
+def _format_hours(value: float | int) -> str:
+    return f"{value:g}".replace(".", ",")
+
+
+def _truncate_explanation(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    candidate = value[: limit - 1]
+    sentence_end = max(candidate.rfind(". "), candidate.rfind("; "))
+    if sentence_end >= limit // 2:
+        shortened = candidate[: sentence_end + 1].rstrip(" ,;:.")
+    else:
+        shortened = candidate.rsplit(" ", 1)[0].rstrip(" ,;:.")
+    return shortened + "."
+
+
+_DRIVER_LABELS = {
+    "цели": "согласование целей и критериев результата",
+    "стейкхолдеры": "взаимодействие с заинтересованными сторонами",
+    "потоки": "количество и взаимосвязь рабочих потоков",
+    "системы": "число затрагиваемых систем",
+    "подрядчики": "координацию внешних исполнителей",
+    "зависимости": "межсистемные и организационные зависимости",
+    "вехи": "контрольные точки проекта",
+    "требования": "объём и детализацию требований",
+    "сценарии": "количество рабочих сценариев",
+    "интеграции": "интеграционные связи",
+    "риски": "выявленные проектные риски",
+    "sla": "целевые показатели SLA",
+    "обращения": "ожидаемый поток обращений",
+    "режим": "режим оказания поддержки",
+}
+
+
+def _humanize_driver(value: object) -> str:
+    cleaned = _clean_explanation_fragment(value)
+    return _DRIVER_LABELS.get(cleaned.casefold(), cleaned.casefold())
+
+
+def _select_explanation_facts(values: object) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    ranked: list[tuple[int, int, str]] = []
+    priority_markers = (
+        "предмет работ",
+        "объём",
+        "колич",
+        "срок",
+        "sla",
+        "канал",
+        "состояние решения",
+        "пользовател",
+        "обращен",
+        "платформ",
+    )
+    for index, item in enumerate(values):
+        cleaned = _clean_explanation_fragment(item)
+        if not cleaned:
+            continue
+        lowered = cleaned.casefold()
+        rank = next(
+            (position for position, marker in enumerate(priority_markers) if marker in lowered),
+            len(priority_markers),
+        )
+        if ":" in cleaned:
+            label, value = cleaned.split(":", 1)
+            cleaned = f"{_lower_initial(label.strip())} — {_lower_initial(value.strip())}"
+        ranked.append((rank, index, _truncate_explanation(cleaned, 170).rstrip(".")))
+    return [item[2] for item in sorted(ranked)[:2]]
+
+
+def _explain_compacted_hours(
+    rationale: str | None,
+    total_hours: float,
+    included_hours: float,
+) -> str:
+    base = rationale or f"На выполнение работы заложено {_format_hours(total_hours)} ч."
+    updated = re.sub(
+        r"заложено\s+\d+(?:[.,]\d+)?\s*ч",
+        f"заложено {_format_hours(total_hours)} ч",
+        base,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    disclosure = (
+        f" В эту сумму включено {_format_hours(included_hours)} ч участия смежного "
+        "специалиста для проверки и согласования результата."
+    )
+    shortened_base = _truncate_explanation(updated.rstrip(), 600 - len(disclosure))
+    return shortened_base + disclosure
 
 
 @router.get(
@@ -1889,10 +2120,159 @@ async def download_analysis_xlsx(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
         headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
             "Content-Disposition": (
                 f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
             ),
             "X-Excel-Recalculation": service.recalculation_status,
+            "X-Projectile-Artifact-Attached": "true",
+            "X-Projectile-Artifact-Document-Id": str(artifact_document_id),
+            "X-Projectile-Artifact-Version": str(artifact_version),
+        },
+    )
+
+
+@router.get(
+    "/api/v1/projects/{project_id}/analysis-runs/{run_id}/proposal.docx",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document": {}
+            }
+        }
+    },
+    tags=["analysis"],
+)
+async def download_commercial_proposal(
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    session: SessionDependency,
+    request: Request,
+) -> Response:
+    run = await session.scalar(
+        select(AnalysisRun).where(
+            AnalysisRun.id == run_id,
+            AnalysisRun.project_id == project_id,
+            AnalysisRun.status == "ready",
+        )
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Answer or skip the questions before creating a commercial proposal",
+        )
+    result = await session.scalar(
+        select(ProjectAnalysis).where(ProjectAnalysis.run_id == run.id)
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        estimate_service = request.app.state.excel_estimate_service
+        estimate = _analysis_estimate_payload(project, result, run, estimate_service)
+        await _apply_current_rate_overrides(estimate, session)
+        proposal = proposal_payload_from_analysis(
+            project_name=project.name,
+            proposal_date=result.created_at.date(),
+            summary=result.summary,
+            rationale=result.rationale,
+            facts=result.facts,
+            questions=result.questions,
+            assumptions=result.assumptions,
+            warnings=result.warnings,
+            stage_plan=result.raw_result.get("stage_plan"),
+            estimate=estimate,
+        )
+        content = request.app.state.commercial_proposal_service.build(proposal)
+    except (ExcelEstimateError, CommercialProposalError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    storage = LocalFileStorage(
+        request.app.state.settings.storage_root,
+        request.app.state.settings.max_upload_size_bytes,
+        request.app.state.settings.upload_chunk_size_bytes,
+    )
+    artifact_source_path = "generated/current-commercial-proposal.docx"
+    checksum = hashlib.sha256(content).hexdigest()
+    previous = await session.scalar(
+        select(Document)
+        .join(ProjectDocument, ProjectDocument.document_id == Document.id)
+        .where(
+            ProjectDocument.project_id == project_id,
+            Document.source_path == artifact_source_path,
+        )
+        .order_by(Document.version.desc())
+        .limit(1)
+    )
+    artifact_document_id = previous.id if previous is not None else None
+    artifact_version = previous.version if previous is not None else 1
+    if previous is None or previous.checksum_sha256 != checksum:
+        version = 1 if previous is None else previous.version + 1
+        document_id = uuid.uuid4()
+        stored_filename = safe_filename(f"{project.name}-КП.docx")
+        persisted = storage.persist_bytes(
+            content,
+            project_id,
+            document_id,
+            version,
+            stored_filename,
+        )
+        try:
+            session.add_all(
+                [
+                    Document(
+                        id=document_id,
+                        original_filename=stored_filename,
+                        source_path=artifact_source_path,
+                        stored_filename=stored_filename,
+                        media_type=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "wordprocessingml.document"
+                        ),
+                        size_bytes=len(content),
+                        checksum_sha256=checksum,
+                        storage_uri=persisted.storage_uri,
+                        version=version,
+                    ),
+                    ProjectDocument(project_id=project_id, document_id=document_id),
+                    DocumentExtraction(
+                        document_id=document_id,
+                        status="pending",
+                        tables=[],
+                        errors=[],
+                    ),
+                ]
+            )
+            await session.commit()
+            artifact_document_id = document_id
+            artifact_version = version
+        except Exception:
+            storage.remove_persisted(persisted)
+            raise
+    project.updated_at = datetime.now(UTC)
+    await session.commit()
+
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]+", "-", project.name).strip("-_")
+    ascii_name = f"{safe_name or 'project'}-proposal.docx"
+    unicode_name = quote(f"{project.name}-КП.docx")
+    return Response(
+        content=content,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{unicode_name}'
+            ),
             "X-Projectile-Artifact-Attached": "true",
             "X-Projectile-Artifact-Document-Id": str(artifact_document_id),
             "X-Projectile-Artifact-Version": str(artifact_version),

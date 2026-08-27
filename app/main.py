@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.analysis_worker import AnalysisWorker
 from app.api import router
 from app.catalog import seed_project_types
+from app.commercial_proposal import CommercialProposalService
 from app.config import Settings
 from app.database import create_database, ensure_schema_compatibility
 from app.effort_estimator import AdaptiveEffortEstimator
@@ -48,6 +49,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             recalculation_timeout_seconds=(
                 resolved_settings.excel_recalculation_timeout_seconds
             ),
+        )
+        app.state.commercial_proposal_service = CommercialProposalService(
+            resolved_settings.commercial_proposal_template_path.resolve()
         )
 
         if resolved_settings.auto_create_schema:
@@ -92,6 +96,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[
+            "Content-Disposition",
+            "X-Excel-Recalculation",
+            "X-Projectile-Artifact-Attached",
+            "X-Projectile-Artifact-Document-Id",
+            "X-Projectile-Artifact-Version",
+        ],
     )
     application.include_router(router)
     return application
