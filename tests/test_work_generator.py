@@ -218,6 +218,21 @@ def test_work_plan_api_returns_adaptive_contract(
     )
 
 
+def test_compact_prompt_context_retains_scope_codes_without_work_prose(
+    generator: WorkGenerator,
+) -> None:
+    full = generator.prompt_context()
+    compact = generator.compact_prompt_context()
+
+    assert compact["project_types"]["SUP_IT_Implementation"]["template_code"]
+    implementation = compact["templates"]["implementation"]
+    assert any(
+        "solution_design.design_integrations" in stage["typical_work_codes"]
+        for stage in implementation
+    )
+    assert len(str(compact)) < len(str(full))
+
+
 def test_support_lifecycle_separates_one_time_and_monthly_work(
     planner: StagePlanner, generator: WorkGenerator
 ) -> None:

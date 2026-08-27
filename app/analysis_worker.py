@@ -206,7 +206,7 @@ class AnalysisWorker:
         analyzer_output = await analyzer.analyze(
             catalog_for_prompt(catalog_rows),
             sources,
-            work_catalog=self.work_generator.prompt_context(),
+            work_catalog=self.work_generator.compact_prompt_context(),
         )
         await self._set_current_step(run_id, "building_project_scope")
         result = analyzer_output.result

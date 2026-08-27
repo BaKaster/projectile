@@ -430,6 +430,40 @@ class WorkGenerator:
             },
         }
 
+    def compact_prompt_context(self) -> dict[str, object]:
+        """Return the scope codes needed by the classifier without bulky prose.
+
+        The detailed catalogue remains in the deterministic generator. The model
+        needs stable stage/work identifiers to select confirmed scope and avoid
+        re-inventing canonical work; long titles for every catalogue item only add
+        latency to short chat requests.
+        """
+        return {
+            "templates": {
+                template.template_code: [
+                    {
+                        "stage_code": stage.stage_code,
+                        "typical_work_codes": [
+                            f"{stage.stage_code}.{work.code}" for work in stage.works
+                        ],
+                    }
+                    for stage in template.stages
+                ]
+                for template in self.catalog.work_templates
+            },
+            "project_types": {
+                item.project_type_code: {
+                    "template_code": item.template_code,
+                    "scope_dimensions": item.scope_dimensions,
+                    "addition_stage_codes": [
+                        addition.stage_code for addition in item.additions
+                    ],
+                    "exclusions": item.exclusions,
+                }
+                for item in self.catalog.project_type_specializations
+            },
+        }
+
     def _selection_reason(
         self,
         work_code: str,
