@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     )
     excel_recalculation_command: str | None = None
     excel_recalculation_timeout_seconds: int = Field(default=120, gt=0, le=600)
-    max_upload_size_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
+    # Keep the Trial deployment below its memory ceiling while documents are
+    # staged and extracted.  Large source files can otherwise briefly exist in
+    # several buffers at once.
+    max_upload_size_bytes: int = Field(default=128 * 1024 * 1024, gt=0)
     max_files_per_request: int = Field(default=1000, gt=0, le=1000)
     upload_chunk_size_bytes: int = Field(default=1024 * 1024, gt=0)
     cors_origins: str = "http://localhost:3000,http://localhost:5173"

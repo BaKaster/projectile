@@ -276,7 +276,7 @@ const response = await fetch(
 
 Скопируйте `.env.example` в `.env` и измените нужные параметры. Основные ограничения:
 
-- `PROJECTILE_MAX_UPLOAD_SIZE_BYTES` — максимальный размер одного файла, по умолчанию 512 МиБ;
+- `PROJECTILE_MAX_UPLOAD_SIZE_BYTES` — максимальный размер одного файла, по умолчанию 128 МиБ;
 - `PROJECTILE_MAX_FILES_PER_REQUEST` — максимальное количество файлов, по умолчанию 1000;
 - `PROJECTILE_CORS_ORIGINS` — разрешённые frontend origins;
 - `PROJECTILE_STORAGE_ROOT` — каталог бинарных файлов;

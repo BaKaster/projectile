@@ -562,7 +562,7 @@ class DocumentRecognizer:
     def _recognize_docling(self, path: Path) -> RecognitionResult:
         try:
             conversion = self._get_docling_converter().convert(
-                path, max_file_size=512 * 1024 * 1024, max_num_pages=1000
+                path, max_file_size=128 * 1024 * 1024, max_num_pages=1000
             )
             document = conversion.document
             text = document.export_to_markdown()
