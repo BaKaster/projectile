@@ -197,6 +197,7 @@ class AdaptiveEffortEstimator:
         codex_timeout_seconds: int = 300,
         codex_auth_file: Path | None = None,
         codex_persist_auth_file: bool = False,
+        codex_api_key: str | None = None,
     ) -> GeneratedWorkPlan:
         baseline = self.estimate(plan)
         prompt = self._ai_prompt(baseline)
@@ -207,6 +208,7 @@ class AdaptiveEffortEstimator:
             timeout_seconds=codex_timeout_seconds,
             auth_file=codex_auth_file,
             persist_auth_file=codex_persist_auth_file,
+            api_key=codex_api_key,
         )
         response = await client.parse(
             input=[
@@ -244,6 +246,7 @@ class AdaptiveEffortEstimator:
         codex_timeout_seconds: int = 300,
         codex_auth_file: Path | None = None,
         codex_persist_auth_file: bool = False,
+        codex_api_key: str | None = None,
         project_summary: str = "",
         assumptions: list[str] | None = None,
         warnings: list[str] | None = None,
@@ -265,6 +268,7 @@ class AdaptiveEffortEstimator:
             timeout_seconds=codex_timeout_seconds,
             auth_file=codex_auth_file,
             persist_auth_file=codex_persist_auth_file,
+            api_key=codex_api_key,
         )
         response = await client.parse(
             input=[
