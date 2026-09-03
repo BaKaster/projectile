@@ -43,7 +43,6 @@ RUN pip install ".[recognition]"
 # Application code changes no longer invalidate the heavyweight ML dependency layers.
 COPY app ./app
 COPY data ./data
-COPY frontend ./frontend
 COPY scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 COPY ["Шаблон.xlsx", "/app/data/estimate-template.xlsx"]
 
