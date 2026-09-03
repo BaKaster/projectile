@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     codex_timeout_seconds: int = Field(default=300, gt=0, le=1800)
     codex_auth_file: Path | None = None
     codex_persist_auth_file: bool = False
+    codex_api_key: SecretStr | None = None
     analysis_model: str = "gpt-5.6-luna"
     analysis_reasoning_effort: str = "medium"
     analysis_ai_direct_estimation: bool = True
@@ -52,3 +53,7 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def codex_api_key_value(self) -> str | None:
+        return self.codex_api_key.get_secret_value() if self.codex_api_key else None

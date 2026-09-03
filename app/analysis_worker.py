@@ -202,6 +202,7 @@ class AnalysisWorker:
             codex_timeout_seconds=self.settings.codex_timeout_seconds,
             codex_auth_file=self.settings.codex_auth_file,
             codex_persist_auth_file=self.settings.codex_persist_auth_file,
+            codex_api_key=self.settings.codex_api_key_value,
         )
         analyzer_output = await analyzer.analyze(
             catalog_for_prompt(catalog_rows),
@@ -420,6 +421,7 @@ class AnalysisWorker:
                             codex_persist_auth_file=(
                                 self.settings.codex_persist_auth_file
                             ),
+                            codex_api_key=self.settings.codex_api_key_value,
                             project_summary=result.summary,
                             assumptions=result.assumptions,
                             warnings=result.warnings,

@@ -108,6 +108,12 @@ def test_codex_child_environment_excludes_application_secrets(
     assert "OPENAI_API_KEY" not in environment
 
 
+def test_codex_child_environment_accepts_explicit_api_key(tmp_path: Path) -> None:
+    environment = _codex_environment(tmp_path, api_key="test-api-key")
+
+    assert environment["CODEX_API_KEY"] == "test-api-key"
+
+
 def test_persistent_auth_uses_source_codex_home(
     tmp_path: Path,
 ) -> None:
