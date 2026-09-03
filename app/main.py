@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import base64
+import hmac
 from contextlib import asynccontextmanager
 import json
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 
 from app.analysis_worker import AnalysisWorker
 from app.api import router
@@ -105,6 +110,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ],
     )
     application.include_router(router)
+
+    @application.middleware("http")
+    async def protect_demo(request, call_next):
+        """Require a password when a public demonstration is explicitly enabled."""
+        password = resolved_settings.demo_password
+        if password:
+            supplied_username = ""
+            supplied_password = ""
+            authorization = request.headers.get("Authorization", "")
+            if authorization.startswith("Basic "):
+                try:
+                    decoded = base64.b64decode(authorization[6:], validate=True).decode("utf-8")
+                    supplied_username, supplied_password = decoded.split(":", 1)
+                except (UnicodeDecodeError, ValueError):
+                    pass
+            if not (
+                hmac.compare_digest(supplied_username, resolved_settings.demo_username)
+                and hmac.compare_digest(supplied_password, password)
+            ):
+                return Response(
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="Projectile demo", charset="UTF-8"'},
+                )
+
+        return await call_next(request)
+
+    frontend_path = Path(__file__).resolve().parent.parent / "frontend"
+    application.mount(
+        "/",
+        StaticFiles(directory=frontend_path, html=True),
+        name="frontend",
+    )
     return application
 
 
