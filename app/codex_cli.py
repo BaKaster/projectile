@@ -156,6 +156,8 @@ def _codex_environment(
         environment["CODEX_HOME"] = str(codex_home)
     if api_key:
         environment["CODEX_API_KEY"] = api_key
+        # Keep compatibility with Codex CLI versions that read this name.
+        environment["OPENAI_API_KEY"] = api_key
     return environment
 
 

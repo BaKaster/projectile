@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Projectile uses the authenticated Codex CLI session, not an API key.
-unset OPENAI_API_KEY KEY_OPENAI PROJECTILE_OPENAI_API_KEY || true
+# API credentials are read by the application and exposed only to its isolated
+# Codex CLI child process. Do not print these variables or pass them to frontend.
 
 auth_file="${PROJECTILE_CODEX_AUTH_FILE:-}"
 auth_payload="${PROJECTILE_CODEX_AUTH_JSON_B64:-}"
