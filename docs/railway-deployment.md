@@ -26,6 +26,7 @@ PROJECTILE_STORAGE_ROOT=/app/persistent/storage
 PROJECTILE_CODEX_AUTH_FILE=/app/persistent/codex/auth.json
 PROJECTILE_CODEX_PERSIST_AUTH_FILE=true
 PROJECTILE_CODEX_AUTH_JSON_B64=<base64 encoded auth.json>
+PROJECTILE_CODEX_AUTH_OVERWRITE=false
 PROJECTILE_AUTO_CREATE_SCHEMA=true
 PROJECTILE_ANALYSIS_WORKER_ENABLED=true
 PROJECTILE_EXCEL_RECALCULATION_COMMAND=/usr/bin/libreoffice
@@ -38,6 +39,11 @@ PORT=8000
 The bootstrap payload is written only when the persistent `auth.json` does not
 exist. Later token refreshes are retained on the volume and are not overwritten
 by redeployments.
+
+If Codex reports a 401, refresh the bootstrap value from a machine where
+`codex login status` succeeds, set `PROJECTILE_CODEX_AUTH_OVERWRITE=true` for
+one deployment, then return it to `false`. This replaces only the expired
+Codex session and leaves project data on the volume untouched.
 
 Generate the bootstrap value locally without printing the decoded credential:
 

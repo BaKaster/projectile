@@ -6,6 +6,7 @@ unset OPENAI_API_KEY KEY_OPENAI PROJECTILE_OPENAI_API_KEY || true
 
 auth_file="${PROJECTILE_CODEX_AUTH_FILE:-}"
 auth_payload="${PROJECTILE_CODEX_AUTH_JSON_B64:-}"
+auth_overwrite="${PROJECTILE_CODEX_AUTH_OVERWRITE:-false}"
 
 # Railway mounts a fresh persistent volume owned by root. Prepare only the
 # application-owned paths here, then drop privileges before starting the API.
@@ -15,7 +16,7 @@ if [ "$(id -u)" = "0" ]; then
     exec gosu appuser "$0" "$@"
 fi
 
-if [ -n "$auth_file" ] && [ -n "$auth_payload" ] && [ ! -s "$auth_file" ]; then
+if [ -n "$auth_file" ] && [ -n "$auth_payload" ] && { [ ! -s "$auth_file" ] || [ "$auth_overwrite" = "true" ]; }; then
     auth_dir=$(dirname "$auth_file")
     auth_tmp="${auth_file}.tmp"
     umask 077
@@ -24,7 +25,7 @@ if [ -n "$auth_file" ] && [ -n "$auth_payload" ] && [ ! -s "$auth_file" ]; then
     mv "$auth_tmp" "$auth_file"
 fi
 
-unset PROJECTILE_CODEX_AUTH_JSON_B64 || true
+unset PROJECTILE_CODEX_AUTH_JSON_B64 PROJECTILE_CODEX_AUTH_OVERWRITE || true
 
 exec uvicorn app.main:app \
     --host 0.0.0.0 \
