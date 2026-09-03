@@ -125,7 +125,6 @@ class CodexProjectAnalyzer:
         codex_timeout_seconds: int = 300,
         codex_auth_file: Path | None = None,
         codex_persist_auth_file: bool = False,
-        codex_api_key: str | None = None,
     ) -> None:
         self.client = CodexCliClient(
             executable=codex_cli,
@@ -134,7 +133,6 @@ class CodexProjectAnalyzer:
             timeout_seconds=codex_timeout_seconds,
             auth_file=codex_auth_file,
             persist_auth_file=codex_persist_auth_file,
-            api_key=codex_api_key,
         )
         self.max_input_characters = max_input_characters
         self.digest_concurrency = digest_concurrency

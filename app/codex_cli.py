@@ -120,15 +120,11 @@ def resolve_codex_cli(executable: str = "codex") -> Path:
     )
 
 
-def codex_cli_available(
-    executable: str, auth_file: Path | None, api_key: str | None = None
-) -> bool:
+def codex_cli_available(executable: str, auth_file: Path | None) -> bool:
     try:
         resolved = resolve_codex_cli(executable)
     except CodexCliError:
         return False
-    if api_key:
-        return True
     if auth_file is not None:
         return auth_file.expanduser().is_file()
     try:
@@ -144,9 +140,7 @@ def codex_cli_available(
     return status.returncode == 0
 
 
-def _codex_environment(
-    codex_home: Path | None, api_key: str | None = None
-) -> dict[str, str]:
+def _codex_environment(codex_home: Path | None) -> dict[str, str]:
     environment = {
         name: os.environ[name]
         for name in _SAFE_ENVIRONMENT_NAMES
@@ -154,8 +148,6 @@ def _codex_environment(
     }
     if codex_home is not None:
         environment["CODEX_HOME"] = str(codex_home)
-    if api_key:
-        environment["CODEX_API_KEY"] = api_key
     return environment
 
 
@@ -171,7 +163,6 @@ class CodexCliClient:
         timeout_seconds: int = 300,
         auth_file: Path | None = None,
         persist_auth_file: bool = False,
-        api_key: str | None = None,
     ) -> None:
         self.executable = executable
         self.model = model
@@ -179,7 +170,6 @@ class CodexCliClient:
         self.timeout_seconds = timeout_seconds
         self.auth_file = auth_file
         self.persist_auth_file = persist_auth_file
-        self.api_key = api_key
 
     async def parse[T: BaseModel](
         self,
@@ -297,7 +287,7 @@ class CodexCliClient:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=os.name != "nt",
-            env=_codex_environment(codex_home, self.api_key),
+            env=_codex_environment(codex_home),
         )
         try:
             stdout, stderr = await asyncio.wait_for(
