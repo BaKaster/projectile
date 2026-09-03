@@ -115,7 +115,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def protect_demo(request, call_next):
         """Require a password when a public demonstration is explicitly enabled."""
         password = resolved_settings.demo_password
-        if password and request.url.path != "/health":
+        if password:
             supplied_username = ""
             supplied_password = ""
             authorization = request.headers.get("Authorization", "")
